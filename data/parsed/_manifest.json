@@ -1,0 +1,44 @@
+{
+  "arabic_policy.pdf": {
+    "status": "ok",
+    "tool": "marker",
+    "pages": 1,
+    "chars": 310,
+    "seconds": 980.6
+  },
+  "employee_handbook.pdf": {
+    "status": "ok",
+    "tool": "marker",
+    "pages": 3,
+    "chars": 1149,
+    "seconds": 26.8
+  },
+  "expense_policy.docx": {
+    "status": "ok",
+    "tool": "markitdown",
+    "pages": 0,
+    "chars": 435,
+    "seconds": 1.5
+  },
+  "it_faq.html": {
+    "status": "ok",
+    "tool": "markitdown",
+    "pages": 0,
+    "chars": 345,
+    "seconds": 0.0
+  },
+  "projects.xlsx": {
+    "status": "ok",
+    "tool": "markitdown",
+    "pages": 0,
+    "chars": 329,
+    "seconds": 0.0
+  },
+  "q3_board_update.pptx": {
+    "status": "ok",
+    "tool": "markitdown",
+    "pages": 4,
+    "chars": 556,
+    "seconds": 0.0
+  }
+}
