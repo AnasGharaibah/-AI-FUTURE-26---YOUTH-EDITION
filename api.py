@@ -259,15 +259,17 @@ def _locate(page: str, chunk: str) -> tuple[int, int]:
 
 
 def _source(s: dict) -> dict:
+    """quote = exactly the evidence the LLM saw for [n]; start/end highlight the matched chunk in the page."""
     name, page = s["file"], s.get("page") or 1
     ps = pages(name)
-    start, end = _locate(ps[page - 1], s["text"]) if 1 <= page <= len(ps) else (0, 0)
+    start, end = _locate(ps[page - 1], s.get("chunk") or s["text"]) if 1 <= page <= len(ps) else (0, 0)
     return {"n": s["n"], "doc_id": doc_id(name), "file": name, "page": page, "section": s.get("section") or "",
-            "start": start, "end": end, "quote": s["text"][:700]}
+            "start": start, "end": end, "quote": s["text"]}
 
 
 def _verify(answer: str, sources: list[dict]) -> list[dict]:
-    """Per sentence: do its cited sources share most of its words? (a support signal, not a guarantee)"""
+    """Per sentence: do its cited sources share most of its words? (a support signal, not a guarantee)
+    `sources` are rag sources, whose "text" is the same evidence the LLM answered from."""
     text_of = {s["n"]: set(tokens(s["text"])) for s in sources}
     out = []
     for sent in re.split(r"(?<=[.!?؟])\s+|\n+", answer):

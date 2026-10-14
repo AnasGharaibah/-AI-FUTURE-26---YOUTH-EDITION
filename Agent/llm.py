@@ -124,11 +124,12 @@ def _standalone_msg(convo: str, question: str) -> str:
 
 
 def standalone_question(question: str, history: list[tuple[str, str]], model: str | None = None) -> str:
-    """"وكم الرسوم؟" + history about passport renewal -> "كم رسوم تجديد جواز السفر؟". No history -> unchanged."""
+    """"وكم الرسوم؟" + history about passport renewal -> "كم رسوم تجديد جواز السفر؟". No history -> unchanged.
+    Uses all of `history`: the caller decides how many turns (Agent.rag CONFIG["history_turns"])."""
     question = normalize_display(question)
     if not history:
         return question
-    convo = "\n".join(f"المستخدم: {q}\nالمساعد: {a[:300]}" for q, a in history[-2:])
+    convo = "\n".join(f"المستخدم: {q}\nالمساعد: {a[:300]}" for q, a in history)
     msgs = [{"role": "system", "content": _STANDALONE_PROMPT}]
     for c, q, a in _STANDALONE_SHOTS:
         msgs += [{"role": "user", "content": _standalone_msg(c, q)}, {"role": "assistant", "content": a}]
