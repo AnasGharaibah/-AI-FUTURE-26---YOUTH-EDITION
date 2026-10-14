@@ -15,15 +15,69 @@ Usage:
 import hashlib
 import re
 
+from .arabic import normalize_search
+
 PAGE_RE = re.compile(r"^\{(\d+)\}-{48}\s*$")
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)")
-LIST_RE = re.compile(r"^\s*([-*+•]|\d+[.)])\s+")
-SENT_RE = re.compile(r"(?<=[.!?؟。])\s+|(?<=[.!?؟])(?=[A-Z\u0600-\u06FF])|\n+")
+LIST_RE = re.compile(r"^\s*([-*+•]|\d+\s*[.)\-–—]|[أ-ي]\s*[-–)])\s+")
+SENT_RE = re.compile(r"(?<=[.!?؟؛،۔。])\s+|(?<=[.!?؟])(?=[A-Z؀-ۿ])|\n+")
+
+
+_AR_WORD = re.compile(r"[\u0600-\u06ff\u0750-\u077f]")
 
 
 def ntok(text: str) -> int:
-    """Rough token count that works for English and Arabic."""
-    return max(1, int(len(text.split()) * 1.35))
+    """Rough token count: Arabic words tokenize heavier (x1.8) than Latin ones (x1.35)."""
+    words = text.split()
+    ar = sum(1 for w in words if _AR_WORD.search(w))
+    return max(1, int(ar * 1.8 + (len(words) - ar) * 1.35))
+
+
+# ---- Arabic government-document structure -------------------------------------------------
+# level: lower number = bigger heading.  (باب 1, فصل 2, مادة 3, بند 4, أولاً... 5, "الرسوم:" labels 6)
+ORDINALS = ("اول", "ثاني", "ثالث", "رابع", "خامس", "سادس", "سابع", "ثامن", "تاسع", "عاشر")
+LABELS = ("الوثائق المطلوبه", "المستندات المطلوبه", "الاوراق المطلوبه", "الوثائق", "المستندات", "الرسوم", "رسوم",
+          "الشروط", "شروط", "الخطوات", "الاجراءات", "خطوات", "مده الانجاز", "مدة الانجاز", "مكان التقديم",
+          "قنوات التقديم", "طريقه التقديم", "الفئه المستفيده", "الفئات المستفيده", "ملاحظات", "الغرامات",
+          "العقوبات", "التعريفات", "الجهه المسؤوله", "الجهة المسوولة", "اوقات الدوام", "معلومات الاتصال")
+_ARTICLE = re.compile(r"^(?:\*\*)?\s*(المادة|مادة)\s*[\(\[]?\s*(\d+|[ء-ي ]{2,20}?)\s*[\)\]]?\s*(?:\*\*)?\s*[-–—:.،]?\s*(.*)$")
+_CHAPTER = re.compile(r"^(?:\*\*)?\s*(الباب|الفصل|البند|القسم)\s+([\w؀-ۿ]+)(?:\*\*)?\s*[-–—:.،]?\s*(.*)$")
+_ORDINAL = re.compile(r"^(?:\*\*)?\s*([ء-ي\u064b-\u0652]{3,14})\s*[:：\-–—]\s*(?:\*\*)?\s*(.*)$")
+_LABEL = re.compile(r"^(?:\*\*)?\s*([^:：\n|]{2,40}?)\s*(?:\*\*)?\s*[:：]\s*(?:\*\*)?\s*(.*)$")
+_BOLD_ONLY = re.compile(r"^\*\*([^*]{2,60})\*\*$")
+
+
+def arabic_heading(line: str):
+    """Arabic structural line -> (level, heading_text, rest_of_line) or None."""
+    t = line.strip()
+    if not t or t.startswith("|") or len(t.split()) > 14:
+        return None
+    m = _ARTICLE.match(t)
+    if m:
+        num, rest = m.group(2).strip(), m.group(3).strip()
+        title = rest if rest and len(rest.split()) <= 6 and not re.search(r"[.؟!]", rest) else ""
+        return 3, f"{m.group(1)} {num}" + (f" - {title}" if title else ""), "" if title else rest
+    m = _CHAPTER.match(t)
+    if m:
+        lvl = {"الباب": 1, "القسم": 1, "الفصل": 2}.get(m.group(1), 4)
+        title = m.group(3).strip()
+        short = len(title.split()) <= 8 and not re.search(r"[.؟!]", title)
+        return lvl, f"{m.group(1)} {m.group(2)}" + (f" - {title}" if title and short else ""), "" if short else title
+    m = _ORDINAL.match(t)
+    if m and normalize_search(m.group(1)).rstrip("ا").startswith(ORDINALS):
+        rest = m.group(2).strip()
+        short = len(rest.split()) <= 6 and not re.search(r"[.؟!]", rest)
+        return 5, m.group(1) + (f": {rest}" if rest and short else ""), "" if short else rest
+    m = _LABEL.match(t)
+    if m:
+        label, rest = m.group(1).strip(" *"), m.group(2).strip()
+        known = normalize_search(label).startswith(tuple(normalize_search(x) for x in LABELS))
+        if (known and len(label.split()) <= 4) or (not rest and len(label.split()) <= 6):
+            return 6, label, rest
+    m = _BOLD_ONLY.match(t)
+    if m:
+        return 6, m.group(1).strip(), ""
+    return None
 
 
 class Chunker:
@@ -135,8 +189,18 @@ class Chunker:
             if h:
                 flush()
                 blocks.append({"type": "heading", "level": len(h.group(1)),
-                               "text": h.group(2).strip(), "page": page})
+                               "text": h.group(2).replace("**", "").strip("*_ "), "page": page})
                 continue
+            ah = arabic_heading(line) if not line.lstrip().startswith(("-", "*", "•")) else None
+            if ah:
+                flush()
+                blocks.append({"type": "heading", "level": ah[0], "text": ah[1], "page": page})
+                if ah[2]:
+                    kind = "para"
+                    buf.append(ah[2])
+                continue
+            if not line.lstrip().startswith("|"):
+                line = line.replace("**", "")
             t = "table" if line.lstrip().startswith("|") else \
                 "list" if LIST_RE.match(line) else "para"
             if kind and t != kind and not (kind == "list" and t == "para" and line.startswith("  ")):
@@ -235,6 +299,8 @@ class Chunker:
 
             for b in blocks_:
                 pieces = self._split_big(b, max_tok) if ntok(b["text"]) > max_tok else [b["text"]]
+                if b["type"] == "list" and len(pieces) > 1 and path_stack:      # steps split: keep the heading
+                    pieces = pieces[:1] + [f"{path_stack[-1][1]}:\n{x}" for x in pieces[1:]]
                 for p in pieces:
                     page_change = profile == "slides" and cur and b["page"] != cur_page
                     if cur and (ntok("\n\n".join(cur + [p])) > target or page_change):

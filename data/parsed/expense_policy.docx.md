@@ -4,7 +4,7 @@ All business expenses must be submitted within 30 days with a receipt. Expenses 
 
 # Daily allowances for travel
 
-|  |  |  |
+| | | |
 | --- | --- | --- |
 | City | Hotel limit (JOD/night) | Meals (JOD/day) |
 | Amman | 80 | 25 |

@@ -1,0 +1,14 @@
+[project]
+name = "voice-env"
+version = "0.1.0"
+description = "Isolated OmniVoice TTS worker (needs torch 2.8.0, main project uses a newer torch)"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "omnivoice",
+    "torch==2.8.0",
+    "torchaudio==2.8.0",
+    "soundfile",
+    "numpy",
+    "fastapi",
+    "uvicorn",
+]

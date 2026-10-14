@@ -11,14 +11,15 @@ Usage:
     hits = store.hybrid_search(query_text, query_vector, k=20)
 """
 import json
-import re
 from pathlib import Path
+
+from .arabic import tokens
 
 ROOT = Path(__file__).resolve().parent.parent
 
 
 def _tok(text: str):
-    return re.findall(r"\w+", text.lower())
+    return tokens(text)                  # Arabic-aware: normalized, clitics stripped, stopwords dropped
 
 
 class VectorStore:
@@ -32,6 +33,7 @@ class VectorStore:
         self.parents_path = self.path / "parents.json"
         self._bm25 = None
         self._rows = None                # id -> chunk dict (lazy)
+        self._ids = []
         self._parents = None
 
     # ------------------------------------------------------------- writing
@@ -112,6 +114,7 @@ class VectorStore:
         vec = self.vector_search(query_vector, k)
         kw = self.keyword_search(query, k)
         fused, why = {}, {}
+        sims = dict(vec)
         for name, ranked in (("vector", vec), ("keyword", kw)):
             for rank, (cid, _) in enumerate(ranked):
                 fused[cid] = fused.get(cid, 0) + 1 / (rrf_k + rank)
@@ -121,4 +124,5 @@ class VectorStore:
         for h in hits:
             h["score"] = round(fused[h["id"]], 5)
             h["found_by"] = "+".join(why[h["id"]])
+            h["sim"] = round(sims.get(h["id"], 0.0), 4)          # cosine similarity (0 = not in vector top-k)
         return hits

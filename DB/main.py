@@ -28,7 +28,8 @@ def main():
     for name in ("search", "context", "compare"):
         p = sub.add_parser(name)
         p.add_argument("question")
-        p.add_argument("--rerank", action="store_true")
+        p.add_argument("--rerank", action="store_true", help="cross-encoder rerank (+2 GB RAM)")
+        p.add_argument("--no-rewrite", action="store_true", help="skip the MSA query rewrite (no LLM call)")
     p = sub.add_parser("chunks")
     p.add_argument("file", nargs="?")
     p.add_argument("--n", type=int, default=5)
@@ -40,16 +41,16 @@ def main():
             db = Pipeline(chunk_algorithm=algo, db_dir=Pipeline().cfg["db_dir"].parent / f"chroma_{algo}")
             db.ingest()
             print(f"\n==================== {algo} ====================")
-            show_hits(db, db.search(a.question, rerank=a.rerank))
+            show_hits(db, db.search(a.question, rerank=a.rerank or None, rewrite=False if a.no_rewrite else None))
         return
 
     db = Pipeline()
     if a.cmd == "ingest":
         db.ingest(force=a.force)
     elif a.cmd == "search":
-        show_hits(db, db.search(a.question, rerank=a.rerank or None))
+        show_hits(db, db.search(a.question, rerank=a.rerank or None, rewrite=False if a.no_rewrite else None))
     elif a.cmd == "context":
-        text, _ = db.context(a.question)
+        text, _ = db.context(a.question, rerank=a.rerank or None, rewrite=False if a.no_rewrite else None)
         print(text)
     elif a.cmd == "stats":
         print(json.dumps(db.stats(), indent=2, ensure_ascii=False))

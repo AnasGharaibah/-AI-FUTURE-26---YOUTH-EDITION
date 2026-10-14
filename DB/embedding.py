@@ -22,6 +22,7 @@ class Embedder:
         self.batch_size = batch_size
         self.cache_path = Path(cache_path) if cache_path else None
         self._cache = self._load_cache()
+        self._client = None
 
     # ----------------------------------------------------------------- cache
     def _key(self, text: str) -> str:
@@ -47,7 +48,14 @@ class Embedder:
     def _call(self, texts):
         import ollama
         try:
-            return ollama.embed(model=self.model, input=texts)["embeddings"]
+            if self._client is None:
+                self._client = ollama.Client(timeout=120)         # never hang forever on a stuck runner
+            try:
+                return self._client.embed(model=self.model, input=texts)["embeddings"]
+            except Exception as e:
+                if "timeout" not in type(e).__name__.lower():
+                    raise
+                return self._client.embed(model=self.model, input=texts)["embeddings"]   # one retry
         except Exception as e:
             msg = str(e).lower()
             if "not found" in msg:

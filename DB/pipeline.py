@@ -11,8 +11,9 @@ import json
 import time
 from pathlib import Path
 
+from .arabic import is_arabic, normalize_display
 from .chroma import VectorStore
-from .chunks import Chunker
+from .chunks import Chunker, ntok
 from .embedding import Embedder
 from .parse import Parser
 
@@ -30,6 +31,9 @@ DEFAULTS = {
     "reranker_model": "BAAI/bge-reranker-v2-m3",
     "expand_parents": True,                  # give the LLM the whole section if small
     "parent_max_tokens": 700,
+    "rewrite_query": True,                   # Arabic questions: also search an MSA rewrite (needs the LLM, cached)
+    "rewriter": None,                        # callable(question) -> MSA question; None = Agent.llm.rewrite_to_msa
+    "schema": 2,                             # bump when chunking/normalisation changes -> forces a re-index
 }
 
 
@@ -48,7 +52,7 @@ class Pipeline:
     def _signature(self):
         files = {f.name: f.stat().st_mtime for f in sorted(Path(self.cfg["parsed_dir"]).glob("*.md"))}
         return {"files": files, "embed_model": self.cfg["embed_model"],
-                "chunk_algorithm": self.cfg["chunk_algorithm"]}
+                "chunk_algorithm": self.cfg["chunk_algorithm"], "schema": self.cfg["schema"]}
 
     def ingest(self, force: bool = False) -> int:
         """Parse new/changed documents, then rebuild the index if anything changed."""
@@ -79,18 +83,58 @@ class Pipeline:
     def _rerank(self, query, hits):
         if self._reranker is None:
             from sentence_transformers import CrossEncoder
-            self._reranker = CrossEncoder(self.cfg["reranker_model"], max_length=512)
-        scores = self._reranker.predict([(query, h["text"]) for h in hits])
+            import torch
+            dev = "mps" if torch.backends.mps.is_available() else "cpu"
+            kw = {"dtype": torch.float16} if dev == "mps" else {}       # half the RAM (1.1 GB instead of 2.2)
+            self._reranker = CrossEncoder(self.cfg["reranker_model"], max_length=512, device=dev, model_kwargs=kw)
+        # same "[file > section]" context line the embedder saw - otherwise identical-looking chunks of different services tie
+        scores = self._reranker.predict([(query, f"{h['source']} > {h['section'] or '-'}\n{h['text']}") for h in hits])
         for h, s in zip(hits, scores):
             h["rerank"] = round(float(s), 4)
         return sorted(hits, key=lambda h: -h["rerank"])
 
-    def search(self, query: str, k: int = None, rerank: bool = None):
-        """Hybrid search (+ optional rerank). Returns the best chunk dicts."""
+    def _queries(self, query: str, rewrite: bool):
+        """[original] + [MSA rewrite] for Arabic questions (when enabled and the rewriter works)."""
+        qs = [query]
+        if rewrite and is_arabic(query):
+            try:
+                fn = self.cfg["rewriter"]
+                if fn is None:
+                    from Agent.llm import rewrite_to_msa as fn
+                alt = normalize_display(fn(query))
+                if alt and alt not in qs:
+                    qs.append(alt)
+            except Exception as e:                  # LLM down / DB used without Agent: plain search still works
+                print(f"(query rewrite skipped: {e})")
+        return qs
+
+    def search(self, query: str, k: int = None, rerank: bool = None, rewrite: bool = None):
+        """Hybrid search over the question (+ its MSA rewrite), RRF-fused, optional rerank.
+        Returns the best chunk dicts."""
         k = k or self.cfg["top_k_final"]
         rerank = self.cfg["use_reranker"] if rerank is None else rerank
-        qvec = self.embedder.embed_query(query)
-        hits = self.store.hybrid_search(query, qvec, k=self.cfg["top_k_retrieve"])
+        rewrite = self.cfg["rewrite_query"] if rewrite is None else rewrite
+        query = normalize_display(query)
+        queries = self._queries(query, rewrite)
+
+        fused, hits_by_id, why = {}, {}, {}
+        for qi, q in enumerate(queries):
+            qvec = self.embedder.embed_query(q)
+            for rank, h in enumerate(self.store.hybrid_search(q, qvec, k=self.cfg["top_k_retrieve"])):
+                fused[h["id"]] = fused.get(h["id"], 0) + 1 / (60 + rank)
+                best = hits_by_id.setdefault(h["id"], h)
+                best["sim"] = max(best.get("sim", 0), h.get("sim", 0))
+                why.setdefault(h["id"], set()).update(h["found_by"].split("+"))
+                if qi:
+                    why[h["id"]].add("rewrite")
+        order = sorted(fused, key=fused.get, reverse=True)[:self.cfg["top_k_retrieve"]]
+        hits = []
+        for cid in order:
+            h = hits_by_id[cid]
+            h["score"] = round(fused[cid], 5)
+            h["found_by"] = "+".join(sorted(why[cid]))
+            hits.append(h)
+
         if rerank and hits:
             try:
                 hits = self._rerank(query, hits)
@@ -100,7 +144,7 @@ class Pipeline:
         if self.cfg["expand_parents"]:
             for h in hits:
                 p = self.store.parent(h.get("parent_id"))
-                if p and len(p["text"].split()) * 1.35 <= self.cfg["parent_max_tokens"]:
+                if p and ntok(p["text"]) <= self.cfg["parent_max_tokens"]:
                     h["context"] = p["text"]        # whole (small) section
         return hits
 
@@ -108,9 +152,9 @@ class Pipeline:
     def cite(h) -> str:
         return f"{h['source']}, p.{h['page']}" if h.get("page") else h["source"]
 
-    def context(self, query: str, k: int = None):
+    def context(self, query: str, k: int = None, **kw):
         """Numbered sources ready to paste into an LLM prompt -> (text, hits)."""
-        hits = self.search(query, k)
+        hits = self.search(query, k, **kw)
         blocks, seen = [], set()
         for i, h in enumerate(hits, 1):
             body = h.get("context") or h["text"]

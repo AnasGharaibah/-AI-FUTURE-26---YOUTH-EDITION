@@ -3,22 +3,22 @@
     "status": "ok",
     "tool": "marker",
     "pages": 1,
-    "chars": 310,
-    "seconds": 980.6
+    "chars": 308,
+    "seconds": 60.5
   },
   "employee_handbook.pdf": {
     "status": "ok",
     "tool": "marker",
     "pages": 3,
-    "chars": 1149,
-    "seconds": 26.8
+    "chars": 1079,
+    "seconds": 20.6
   },
   "expense_policy.docx": {
     "status": "ok",
     "tool": "markitdown",
     "pages": 0,
-    "chars": 435,
-    "seconds": 1.5
+    "chars": 432,
+    "seconds": 0.2
   },
   "it_faq.html": {
     "status": "ok",
@@ -32,13 +32,41 @@
     "tool": "markitdown",
     "pages": 0,
     "chars": 329,
-    "seconds": 0.0
+    "seconds": 0.8
   },
   "q3_board_update.pptx": {
     "status": "ok",
     "tool": "markitdown",
     "pages": 4,
-    "chars": 556,
+    "chars": 554,
+    "seconds": 0.1
+  },
+  "civil_services_regulation.txt": {
+    "status": "ok",
+    "tool": "plain",
+    "pages": 0,
+    "chars": 1243,
     "seconds": 0.0
+  },
+  "driving_licence_faq.html": {
+    "status": "ok",
+    "tool": "markitdown",
+    "pages": 0,
+    "chars": 789,
+    "seconds": 1.6
+  },
+  "national_id_service.docx": {
+    "status": "ok",
+    "tool": "markitdown",
+    "pages": 0,
+    "chars": 910,
+    "seconds": 1.0
+  },
+  "passport_service_guide.pdf": {
+    "status": "ok",
+    "tool": "marker",
+    "pages": 2,
+    "chars": 1855,
+    "seconds": 100.5
   }
 }

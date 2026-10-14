@@ -15,11 +15,59 @@ import traceback
 import warnings
 from pathlib import Path
 
+from .arabic import looks_reversed, normalize_display
+
 warnings.filterwarnings("ignore", message="Couldn't find ffmpeg")
 
 ROOT = Path(__file__).resolve().parent.parent
 PAGE_SEP = "-" * 48                       # page marker: "{N}" + 48 dashes
 PAGE_RE = re.compile(r"\{(\d+)\}-{48}")
+
+
+_AR_WORD = re.compile("[\u0621-\u064a\u064b-\u0652\u0670]+")
+
+
+def _letters_key(word: str) -> str:
+    return "".join(sorted(re.sub("[\u064b-\u0652\u0670]", "", word)))
+
+
+def repair_ligatures(md: str, reference: str) -> tuple[str, int]:
+    """Marker/pdfium can return the letters of Arabic ligatures (لا لم لأ ...) in swapped order
+    (املنتهي for المنتهي). `reference` is the same PDF's text from another extractor (pypdf) whose
+    words are right but whose line order may be off. A word that is NOT in the reference vocabulary but
+    is an anagram of exactly ONE reference word is replaced by it. Returns (text, words_fixed)."""
+    ref = normalize_display(reference)
+    vocab = set(_AR_WORD.findall(ref))
+    by_key = {}
+    for w in vocab:
+        by_key.setdefault(_letters_key(w), set()).add(w)
+    fixed = 0
+
+    def sub(m):
+        nonlocal fixed
+        w = m.group(0)
+        if w in vocab or len(w) < 3:
+            return w
+        cand = by_key.get(_letters_key(w), set())
+        if len(cand) == 1:
+            fixed += 1
+            return next(iter(cand))
+        return w
+    return _AR_WORD.sub(sub, md), fixed
+
+
+def fix_list_numbers(md: str) -> str:
+    """Marker prints RTL list numbers back to front ('- .1 text' -> '1. text') and splits أولاً ('أو ًال')."""
+    md = re.sub(r"(?m)^(\s*)[-*]\s+\.(\d+)\s+", r"\1\2. ", md)
+    return re.sub("أو\\s*\u064b\\s*ال", "أولاً", md)
+
+
+def scramble_ratio(md: str, reference: str) -> float:
+    """Share of Arabic words (>= 3 letters) of `md` that the reference extractor never produced.
+    High (> ~5%) = garbled text, typically RTL table cells."""
+    vocab = set(_AR_WORD.findall(normalize_display(reference)))
+    words = [w for w in _AR_WORD.findall(md) if len(w) >= 3]
+    return sum(w not in vocab for w in words) / len(words) if words else 0.0
 
 
 class Parser:
@@ -79,6 +127,29 @@ class Parser:
         return "".join(f"\n\n{{{i}}}{PAGE_SEP}\n\n{p.extract_text() or ''}"
                        for i, p in enumerate(PdfReader(str(path)).pages))
 
+    def release(self):
+        """Drop the Marker models: they hold GBs of RAM that Ollama needs for the embedder / LLM."""
+        if self._marker:
+            import gc
+            self._marker = None
+            gc.collect()
+            try:
+                import torch
+                if torch.backends.mps.is_available():
+                    torch.mps.empty_cache()
+            except Exception:
+                pass
+
+    @staticmethod
+    def _pdf_empty_pages(path: Path) -> list:
+        """1-based numbers of PDF pages without a text layer (scanned). We have no OCR, so only report."""
+        try:
+            from pypdf import PdfReader
+            return [i + 1 for i, p in enumerate(PdfReader(str(path)).pages)
+                    if len((p.extract_text() or "").strip()) < 10]
+        except Exception:
+            return []
+
     # --------------------------------------------------------------- public
     def out_path(self, src: Path) -> Path:
         return self.parsed_dir / f"{src.name}.md"       # report.pdf -> report.pdf.md
@@ -126,16 +197,41 @@ class Parser:
                 print(f"{status.upper():8} {f.name}")
                 manifest[f.name] = {"status": status}
                 continue
+            text = normalize_display(text)               # NFKC, no tatweel, ASCII digits
+            if tool == "marker":
+                try:
+                    ref = self._pdf_fallback(f)
+                    text, n_fixed = repair_ligatures(text, ref)
+                    text = fix_list_numbers(text).replace("<br>", " ")
+                    if n_fixed:
+                        print(f"repaired {n_fixed} words with swapped ligature letters in {f.name}")
+                    garbled = scramble_ratio(text, ref)
+                    if garbled > 0.05:
+                        print(f"WARNING  {f.name}: {garbled:.0%} of Arabic words look garbled (RTL tables?) - check data/parsed")
+                except Exception as e:
+                    print(f"(ligature repair skipped for {f.name}: {e})")
+            empty_pages = self._pdf_empty_pages(f) if f.suffix.lower() == ".pdf" else []
             if len(PAGE_RE.sub("", text).strip()) < 50:
                 status = "empty"
-                print(f"WARNING  {f.name} has no extractable text (scanned?)")
+                print(f"WARNING  {f.name} has no extractable text (scanned? no OCR available)")
+            elif empty_pages:
+                status = "partial"
+                print(f"WARNING  {f.name}: pages {empty_pages} have no text layer (scanned) and are missing")
+            rev = looks_reversed(text)
+            if rev:
+                print(f"WARNING  {f.name}: Arabic text looks REVERSED (bad PDF text layer) - answers may be wrong")
             out.write_text(text, encoding="utf-8")
             pages = len(PAGE_RE.findall(text))
             manifest[f.name] = {"status": status, "tool": tool, "pages": pages,
                                 "chars": len(text), "seconds": round(time.time() - t0, 1)}
+            if empty_pages:
+                manifest[f.name]["empty_pages"] = empty_pages
+            if rev:
+                manifest[f.name]["reversed"] = True
             print(f"{status.upper():8} [{tool}] {f.name} ({pages} pages, {len(text):,} chars)")
 
         self.manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False))
+        self.release()
         bad = [k for k, v in manifest.items() if v["status"] != "ok"]
         print(f"parse: {len(manifest) - len(bad)} ok, {len(bad)} need attention {bad or ''}")
         return manifest
