@@ -114,6 +114,18 @@ class Parser:
         return text
 
     @staticmethod
+    def _read_plain(path: Path) -> str:
+        """UTF-8 (with or without BOM), UTF-16 with BOM, else Windows Arabic (cp1256). Never the OS default
+        encoding: on Windows that is cp1252 and turns Arabic into mojibake."""
+        raw = path.read_bytes()
+        if raw.startswith((b"\xff\xfe", b"\xfe\xff")):
+            return raw.decode("utf-16")
+        try:
+            return raw.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            return raw.decode("cp1256", errors="replace")
+
+    @staticmethod
     def _office_to_md(path: Path) -> str:
         from markitdown import MarkItDown
         text = MarkItDown().convert(str(path)).text_content
@@ -159,7 +171,7 @@ class Parser:
         ext = path.suffix.lower()
         try:
             if ext in self.PLAIN_EXT:
-                return path.read_text(errors="ignore"), "plain", "ok"
+                return self._read_plain(path), "plain", "ok"
             if ext in self.OFFICE_EXT:
                 return self._office_to_md(path), "markitdown", "ok"
             if ext in self.MARKER_EXT:
