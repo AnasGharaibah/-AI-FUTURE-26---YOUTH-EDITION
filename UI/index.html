@@ -512,7 +512,7 @@ body.aiBusy #voiceFab .wave path{animation-play-state:paused}
 <aside id="side">
   <div class="brand"><span class="orb"></span>Verity</div>
   <button id="newChat" class="newChatSide"><span class="newChatPlus">＋</span><span>New chat</span></button>
-  <div class="row"><span data-chat-label="Chats">Chats</span><button id="exportChats" class="ghost">Export chats</button></div>
+  <div class="row"><span data-chat-label="Chats">Chats</span><button id="exportWordChat" class="ghost" title="Export this chat to Word">📄 Word</button><button id="exportChats" class="ghost">Export chats</button></div>
   <label class="archiveFilter"><input id="showArchived" type="checkbox"><span>Archived chats</span></label>
   <div id="chatList"></div>
   <div class="foot"><button id="theme" class="ghost"></button></div>
@@ -579,6 +579,8 @@ Object.assign(AR,{
   "Download Word":"تنزيل ملف Word",
   "Word document ready.":"مستند Word جاهز.",
   "Could not create the Word document.":"تعذر إنشاء مستند Word.",
+  "Export to Word":"تصدير إلى Word",
+  "Ask a question first, then export.":"اطرح سؤالاً أولاً ثم صدّر المحادثة.",
   "No Arabic speech voice is available in this browser. Install an Arabic Windows voice or use Microsoft Edge.":"لا يتوفر صوت عربي في هذا المتصفح. ثبّت صوتاً عربياً في ويندوز أو استخدم Microsoft Edge.",
   "Cannot reach the server. Is api.py running?":"تعذر الاتصال بالخادم. هل يعمل api.py؟"
 });
@@ -797,19 +799,55 @@ function renderVerification(items){
   return wrap;
 }
 
+/* Export to Word: items = [{question, answer, sources}] -> the server builds a .docx -> browser downloads it */
+async function exportWord(items,title,button){
+  items=(items||[]).filter(i=>(i.answer||'').trim());
+  if(!items.length){toast(tr('Ask a question first, then export.'));return}
+  const label=button?.textContent;
+  if(button){button.disabled=true;button.textContent=tr('Preparing Word document…')}
+  try{
+    const r=await fetch('/api/export/docx',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({title:(title||'').replace(/[\r\n]+/g,' ').slice(0,80),items})});
+    if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.detail||r.statusText)}
+    const blob=await r.blob();
+    const cd=r.headers.get('Content-Disposition')||'';
+    const m=cd.match(/filename\*=UTF-8''([^;]+)/i);
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+    a.download=m?decodeURIComponent(m[1]):'chat.docx';document.body.append(a);a.click();a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+    toast(tr('Word document ready.'));
+  }catch(e){toast((e&&e.message)||tr('Could not create the Word document.'))}
+  finally{if(button){button.disabled=false;button.textContent=label}}
+}
+/* the whole open chat: each question with the answer that followed it */
+function currentChatItems(){
+  const items=[];let q='';
+  for(const node of document.querySelectorAll('#msgs .m')){
+    const rec=node._chatRecord||{};
+    if(node.classList.contains('user')){q=rec.text||node.textContent||'';continue}
+    const meta=node._answerMeta||rec.meta;
+    const answer=meta?.answer||rec.text||'';
+    if(answer.trim())items.push({question:q,answer,sources:meta?.sources||[]});
+    q='';
+  }
+  return items;
+}
+
 function addAnswerTools(bub,meta){
   bub._answerMeta=meta;
   if(bub._chatRecord){bub._chatRecord.meta=meta;saveCurrentChat()}
   const bar=el('div','answerTools');
   const listen=el('button','mini',tr("🔊 Listen"));
   const why=el('button','mini',tr("Why this answer?"));
+  const word=el('button','mini',tr("📄 Export Word"));
   listen.onclick=()=>speakText(meta.answer);
+  word.onclick=()=>exportWord([{question:meta.question||'',answer:meta.answer||'',sources:meta.sources||[]}],meta.question,word);
 
   const panel=el('div','trustPanel');
   panel.hidden=true;
   why.onclick=()=>{panel.hidden=!panel.hidden;if(!panel.hidden)panel.scrollIntoView({block:'nearest',behavior:'smooth'})};
 
-  bar.append(listen,why);
+  bar.append(listen,why,word);
   bub.append(bar,panel);
 
   const q=meta.searchQuery||meta.question;
@@ -1307,6 +1345,10 @@ async function openSavedChat(id){
   if(matchMedia('(max-width:900px)').matches)setSidebar(true);
 }
 $('#showArchived').onchange=renderSavedChats;
+$('#exportWordChat').onclick=e=>{
+  const items=currentChatItems();
+  exportWord(items,items[0]?.question||'',e.currentTarget);
+};
 $('#exportChats').onclick=()=>{
   saveCurrentChat();const blob=new Blob([JSON.stringify({chats:savedChats},null,2)],{type:'application/json'});
   const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='lumen-chats.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);

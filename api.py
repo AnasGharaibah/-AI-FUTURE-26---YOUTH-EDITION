@@ -324,6 +324,112 @@ def chat(req: ChatIn):
     return StreamingResponse(events(), media_type="application/x-ndjson")
 
 
+# ================================================================ export to Word
+class ExportItem(BaseModel):
+    question: str = ""
+    answer: str = ""
+    sources: list[dict] = []
+
+
+class ExportIn(BaseModel):
+    title: str = ""
+    items: list[ExportItem]
+
+
+def _rtl(paragraph, rtl: bool):
+    """Arabic paragraphs: right-to-left direction (w:bidi) and RTL runs.
+    No explicit alignment: in a bidi paragraph "start" is already the right edge ("right" would flip it left)."""
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+    if not rtl:
+        return paragraph
+    ppr = paragraph._p.get_or_add_pPr()
+    if ppr.find(qn("w:bidi")) is None:                 # Word wants <w:bidi> in its schema position
+        after = {qn("w:" + t) for t in ("adjustRightInd", "snapToGrid", "spacing", "ind", "contextualSpacing",
+                 "mirrorIndents", "suppressOverlap", "jc", "textDirection", "textAlignment", "textboxTightWrap",
+                 "outlineLvl", "divId", "cnfStyle", "rPr", "sectPr", "pPrChange")}
+        nxt = next((c for c in ppr if c.tag in after), None)
+        bidi = OxmlElement("w:bidi")
+        nxt.addprevious(bidi) if nxt is not None else ppr.append(bidi)
+    for run in paragraph.runs:
+        rpr = run._r.get_or_add_rPr()
+        rpr.get_or_add_rFonts().set(qn("w:cs"), "Arial")   # a font that has Arabic letters
+        rpr.get_or_add_rtl()
+    return paragraph
+
+
+def _clean(text: str) -> str:
+    text = re.sub(r"(?m)^\s*#{1,6}\s*", "", text or "")
+    return re.sub(r"\*\*|__|`", "", text).strip()
+
+
+@app.post("/api/export/docx")
+def export_docx(req: ExportIn):
+    """Questions + answers (+ their sources) -> a .docx download. Arabic text is written right-to-left."""
+    import io
+    from urllib.parse import quote
+    try:
+        import docx
+        from docx.oxml import OxmlElement
+        from docx.oxml.ns import qn
+        from docx.shared import Pt, RGBColor
+    except ImportError:
+        raise HTTPException(500, "python-docx is missing. Run: uv add python-docx")
+    items = [i for i in req.items if i.answer.strip()]
+    if not items:
+        raise HTTPException(400, "There is nothing to export yet.")
+
+    all_text = req.title + " ".join(i.question + i.answer for i in items)
+    ar = is_arabic(all_text)
+    title = _clean(req.title)[:80] or ("محادثة يوث" if ar else "Yoth AI chat")
+
+    doc = docx.Document()
+    style = doc.styles["Normal"]
+    style.font.name, style.font.size = "Arial", Pt(12)
+    _rtl(doc.add_heading(title, level=1), ar)
+
+    for n, item in enumerate(items, 1):
+        q_ar, a_ar = is_arabic(item.question or item.answer), is_arabic(item.answer)
+        if item.question.strip() and not (len(items) == 1 and _clean(item.question)[:80] == title):
+            label = ("السؤال" if q_ar else "Question") + (f" {n}" if len(items) > 1 else "")
+            _rtl(doc.add_heading(f"{label}: {_clean(item.question)}", level=2), q_ar)
+        for block in re.split(r"\n\s*\n|\n(?=\s*(?:\d+[.)]|[-•*])\s)", _clean(item.answer)):
+            if block.strip():
+                _rtl(doc.add_paragraph(block.strip()), a_ar)
+        seen, refs = set(), []
+        for s in item.sources:
+            file, page = str(s.get("file", "")).strip(), s.get("page")
+            if file and (file, page) not in seen:
+                seen.add((file, page))
+                n_ = s.get("n")
+                where = (f"، صفحة {page}" if a_ar else f", page {page}") if page else ""
+                refs.append((f"[{n_}] " if n_ else "") + file + where)
+        if refs:
+            p = doc.add_paragraph()
+            run = p.add_run("المصادر:" if a_ar else "Sources:")
+            run.bold = True
+            run._r.get_or_add_rPr().get_or_add_bCs()                   # bold for Arabic letters too
+            _rtl(p, a_ar)
+            for r in refs:
+                p = _rtl(doc.add_paragraph(r, style="List Bullet"), a_ar)
+                for run in p.runs:
+                    run.font.size, run.font.color.rgb = Pt(10), RGBColor(0x55, 0x55, 0x55)
+                    sz = run._r.rPr.find(qn("w:sz"))
+                    nxt = sz.getnext() if sz is not None else None
+                    if sz is not None and (nxt is None or nxt.tag != qn("w:szCs")):
+                        cs = OxmlElement("w:szCs")                     # same size for Arabic letters
+                        cs.set(qn("w:val"), "20")
+                        sz.addnext(cs)
+
+    buf = io.BytesIO()
+    doc.save(buf)
+    name = re.sub(r'[\\/:*?"<>|\r\n]+', " ", title).strip()[:60] or "chat"
+    return Response(buf.getvalue(),
+                    media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    headers={"Content-Disposition": f"attachment; filename=\"export.docx\"; "
+                                                    f"filename*=UTF-8''{quote(name + '.docx')}"})
+
+
 # ================================================================ voice
 class TTSIn(BaseModel):
     text: str
