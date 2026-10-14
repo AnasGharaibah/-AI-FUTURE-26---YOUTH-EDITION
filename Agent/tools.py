@@ -2,6 +2,8 @@
 import ast
 import datetime as dt
 import operator
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeout
 from functools import lru_cache
 from pathlib import Path
 
@@ -45,13 +47,30 @@ _OPS = {ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul,
         ast.USub: operator.neg, ast.UAdd: operator.pos}
 
 
+MAX_EXPONENT = 100
+MAX_NUMBER = 1e12
+CALC_TIMEOUT = 2.0                      # seconds
+_calc_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="calculate")
+
+
+def _check(x):
+    if abs(x) > MAX_NUMBER:
+        raise ValueError(f"number too large (limit {MAX_NUMBER:.0e})")
+    return x
+
+
 def _eval(node):
-    if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
-        return node.value
+    """Arithmetic only. Every operand and intermediate result must stay <= MAX_NUMBER and exponents <= MAX_EXPONENT,
+    so input like 9**9**9 is rejected instead of freezing the process."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)) and not isinstance(node.value, bool):
+        return _check(node.value)
     if isinstance(node, ast.BinOp) and type(node.op) in _OPS:
-        return _OPS[type(node.op)](_eval(node.left), _eval(node.right))
+        left, right = _eval(node.left), _eval(node.right)
+        if isinstance(node.op, ast.Pow) and abs(right) > MAX_EXPONENT:
+            raise ValueError(f"exponent too large (limit {MAX_EXPONENT})")
+        return _check(_OPS[type(node.op)](left, right))
     if isinstance(node, ast.UnaryOp) and type(node.op) in _OPS:
-        return _OPS[type(node.op)](_eval(node.operand))
+        return _check(_OPS[type(node.op)](_eval(node.operand)))
     raise ValueError("unsupported expression")
 
 
@@ -59,7 +78,10 @@ def _eval(node):
 def calculate(expression: str) -> str:
     """Evaluate an arithmetic expression, e.g. '3 * 120 + 45.5'. Supports + - * / ** %."""
     try:
-        return str(_eval(ast.parse(expression, mode="eval").body))
+        tree = ast.parse(expression, mode="eval").body
+        return str(_calc_pool.submit(_eval, tree).result(timeout=CALC_TIMEOUT))
+    except FutureTimeout:
+        return f"Could not calculate: took longer than {CALC_TIMEOUT:g} s"
     except Exception as e:
         return f"Could not calculate: {e}"
 

@@ -94,8 +94,12 @@ def main():
 
     if args.retrieval_only:
         return retrieval_only(args, rdir)
+    with open(args.csv, encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh))[:args.limit]
+    if not rows:
+        print("no questions to run (empty CSV or --limit 0)")
+        return
     run, model = load_runner(args)
-    rows = list(csv.DictReader(open(args.csv, encoding="utf-8")))[:args.limit]
     out, t_all = [], time.time()
     for i, r in enumerate(rows, 1):
         thread = f"eval-{r['thread'] or i}"
@@ -126,7 +130,11 @@ def retrieval_only(args, rdir):
     (they need the LLM). No rewrite unless --rewrite-llm... keeps RAM free for the reranker test."""
     from DB.pipeline import Pipeline
     db = Pipeline()
-    rows = [r for r in csv.DictReader(open(args.csv, encoding="utf-8")) if r["source"] and r["type"] != "followup"]
+    with open(args.csv, encoding="utf-8") as fh:
+        rows = [r for r in csv.DictReader(fh) if r["source"] and r["type"] != "followup"]
+    if not rows:
+        print("retrieval-only: no answerable questions with a source in", args.csv)
+        return
     ranks, t0 = [], time.time()
     for r in rows:
         hits = db.search(r["question"], k=5, rerank=args.rerank or False, rewrite=False)
@@ -139,7 +147,7 @@ def retrieval_only(args, rdir):
            "seconds_per_query": round((time.time() - t0) / n, 2)}
     rdir.mkdir(exist_ok=True)
     (rdir / f"{res['tag']}.retrieval.json").write_text(json.dumps(res, ensure_ascii=False, indent=1), encoding="utf-8")
-    print(json.dumps(res, ensure_ascii=False, indent=1), encoding="utf-8")
+    print(json.dumps(res, ensure_ascii=False, indent=1))
 
 
 def summarize(rows, tag, model):
@@ -147,11 +155,16 @@ def summarize(rows, tag, model):
     for r in rows:
         types.setdefault(r["type"], []).append(r["ok"])
     hits = [r["hit"] for r in rows if r["hit"] is not None]
+    n = len(rows) or 1                                  # no rows -> zeros, not ZeroDivisionError
     return {"tag": tag, "model": model, "n": len(rows),
-            "accuracy": round(sum(r["ok"] for r in rows) / len(rows), 3),
+            "accuracy": round(sum(r["ok"] for r in rows) / n, 3),
             "by_type": {t: f"{sum(v)}/{len(v)}" for t, v in types.items()},
             "retrieval_hit@5": round(sum(hits) / len(hits), 3) if hits else None,
-            "avg_seconds": round(sum(r["seconds"] for r in rows) / len(rows), 1)}
+            "avg_seconds": round(sum(r["seconds"] for r in rows) / n, 1)}
+
+
+def _pct(x) -> str:
+    return "-" if x is None else f"{x:.0%}"
 
 
 def table(rdir):
@@ -160,7 +173,7 @@ def table(rdir):
     print("| run | model | acc | hit@5 | s/q | " + " | ".join(types) + " |")
     print("|" + "---|" * (5 + len(types)))
     for s in runs:
-        print(f"| {s['tag']} | {s['model']} | {s['accuracy']:.0%} | {s['retrieval_hit@5']:.0%} | {s['avg_seconds']} | "
+        print(f"| {s['tag']} | {s['model']} | {_pct(s['accuracy'])} | {_pct(s.get('retrieval_hit@5'))} | {s['avg_seconds']} | "
               + " | ".join(s["by_type"].get(t, "-") for t in types) + " |")
 
 

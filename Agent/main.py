@@ -34,12 +34,15 @@ def main():
         if not q:
             continue
         print("ai> ", end="", flush=True)
-        for kind, val in stream(q, thread):
-            if kind == "sources":
-                print("\n   sources: " + "; ".join(f"[{x['n']}] {x['file']}" + (f" p.{x['page']}" if x["page"] else "")
-                                                   for x in val), end="", flush=True)
-                continue
-            print(f"\n   [tool: {val}]\nai> " if kind == "tool" else val, end="", flush=True)
+        try:
+            for kind, val in stream(q, thread):
+                if kind == "sources":
+                    print("\n   sources: " + "; ".join(f"[{x['n']}] {x['file']}" + (f" p.{x['page']}" if x["page"] else "")
+                                                       for x in val), end="", flush=True)
+                    continue
+                print(f"\n   [tool: {val}]\nai> " if kind == "tool" else val, end="", flush=True)
+        except KeyboardInterrupt:                       # Ctrl+C while answering: stop this answer, keep the chat
+            print("\n   (stopped)", end="")
         print("\n")
 
 
