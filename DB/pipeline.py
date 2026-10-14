@@ -63,7 +63,7 @@ class Pipeline:
             print("ingest: nothing to index")
             return 0
         if (not force and self.meta_path.exists() and self.store.count()
-                and json.loads(self.meta_path.read_text()) == sig):
+                and json.loads(self.meta_path.read_text(encoding="utf-8")) == sig):
             print(f"ingest: index up to date ({self.store.count()} chunks)")
             return self.store.count()
 
@@ -75,7 +75,7 @@ class Pipeline:
         self.store.reset()
         self.store.add(chunks, vectors)
         self.store.save_parents(parents)
-        self.meta_path.write_text(json.dumps(sig))
+        self.meta_path.write_text(json.dumps(sig), encoding="utf-8")
         print(f"ingest: {self.store.count()} chunks indexed in {time.time() - t0:.1f}s")
         return self.store.count()
 
@@ -108,9 +108,9 @@ class Pipeline:
                 print(f"(query rewrite skipped: {e})")
         return qs
 
-    def search(self, query: str, k: int = None, rerank: bool = None, rewrite: bool = None):
+    def search(self, query: str, k: int = None, rerank: bool = None, rewrite: bool = None, sources=None):
         """Hybrid search over the question (+ its MSA rewrite), RRF-fused, optional rerank.
-        Returns the best chunk dicts."""
+        sources: optional list of file names to limit the search to. Returns the best chunk dicts."""
         k = k or self.cfg["top_k_final"]
         rerank = self.cfg["use_reranker"] if rerank is None else rerank
         rewrite = self.cfg["rewrite_query"] if rewrite is None else rewrite
@@ -120,7 +120,7 @@ class Pipeline:
         fused, hits_by_id, why = {}, {}, {}
         for qi, q in enumerate(queries):
             qvec = self.embedder.embed_query(q)
-            for rank, h in enumerate(self.store.hybrid_search(q, qvec, k=self.cfg["top_k_retrieve"])):
+            for rank, h in enumerate(self.store.hybrid_search(q, qvec, k=self.cfg["top_k_retrieve"], sources=sources)):
                 fused[h["id"]] = fused.get(h["id"], 0) + 1 / (60 + rank)
                 best = hits_by_id.setdefault(h["id"], h)
                 best["sim"] = max(best.get("sim", 0), h.get("sim", 0))

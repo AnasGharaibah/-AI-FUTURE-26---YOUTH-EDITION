@@ -175,7 +175,7 @@ class Parser:
         """Parse new/changed files in raw_dir. Returns the manifest."""
         self.raw_dir.mkdir(parents=True, exist_ok=True)
         self.parsed_dir.mkdir(parents=True, exist_ok=True)
-        manifest = json.loads(self.manifest_path.read_text()) if self.manifest_path.exists() else {}
+        manifest = json.loads(self.manifest_path.read_text(encoding="utf-8")) if self.manifest_path.exists() else {}
         files = sorted(f for f in self.raw_dir.rglob("*")
                        if f.is_file() and not f.name.startswith("."))
         if not files:
@@ -230,7 +230,7 @@ class Parser:
                 manifest[f.name]["reversed"] = True
             print(f"{status.upper():8} [{tool}] {f.name} ({pages} pages, {len(text):,} chars)")
 
-        self.manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False))
+        self.manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
         self.release()
         bad = [k for k, v in manifest.items() if v["status"] != "ok"]
         print(f"parse: {len(manifest) - len(bad)} ok, {len(bad)} need attention {bad or ''}")

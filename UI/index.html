@@ -1,0 +1,1742 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Verity</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2064%2064%22%3E%3Cdefs%3E%3CradialGradient%20id%3D%22g%22%20cx%3D%2235%25%22%20cy%3D%2230%25%22%20r%3D%2275%25%22%3E%3Cstop%20offset%3D%220%22%20stop-color%3D%22%23fff%22/%3E%3Cstop%20offset%3D%22.18%22%20stop-color%3D%22%239DD8FF%22/%3E%3Cstop%20offset%3D%22.45%22%20stop-color%3D%22%235B6BFF%22/%3E%3Cstop%20offset%3D%22.75%22%20stop-color%3D%22%239B4DFF%22/%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%22%23F04FD0%22/%3E%3C/radialGradient%3E%3CradialGradient%20id%3D%22h%22%20cx%3D%2250%25%22%20cy%3D%2250%25%22%20r%3D%2250%25%22%3E%3Cstop%20offset%3D%22.7%22%20stop-color%3D%22%232F6BFF%22%20stop-opacity%3D%22.6%22/%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%22%232F6BFF%22%20stop-opacity%3D%220%22/%3E%3C/radialGradient%3E%3C/defs%3E%3Ccircle%20cx%3D%2232%22%20cy%3D%2232%22%20r%3D%2231%22%20fill%3D%22url%28%23h%29%22/%3E%3Ccircle%20cx%3D%2232%22%20cy%3D%2232%22%20r%3D%2224%22%20fill%3D%22url%28%23g%29%22/%3E%3C/svg%3E">
+<style>
+:root{--bg:#F4F5FB;--panel:#fff;--side:#EBEDF8;--ink:#14142B;--mute:#6B6B88;--line:#E1E3F2;--acc:#3B35E8;--onacc:#fff;--hl:#FFE066;--onhl:#14142B;--shadow:0 12px 36px rgba(59,53,232,.12);--serif:"Iowan Old Style","Palatino Linotype",Georgia,serif;--sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+[data-theme=dark]{--bg:#0D0E1B;--panel:#16182F;--side:#121428;--ink:#ECECFA;--mute:#9A9BBA;--line:#262947;--acc:#8E89FF;--onacc:#0D0E1B;--shadow:0 12px 36px rgba(0,0,0,.45)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 var(--sans);height:100vh;overflow:hidden}
+button{font:inherit;color:inherit;cursor:pointer}
+button:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+#app{display:grid;grid-template-columns:288px 1fr;height:100vh}
+#app.split{grid-template-columns:288px minmax(380px,1fr) minmax(420px,1.1fr)}
+.pill{display:inline-flex;align-items:center;padding:6px 12px;border-radius:99px;background:var(--panel);border:1px solid var(--line);font-size:13px;color:var(--mute)}
+.ghost{background:transparent;border:1px solid var(--line);border-radius:10px;padding:6px 12px;font-size:13px;color:var(--mute)}
+.ghost:hover{color:var(--ink);border-color:var(--mute)}
+/* sidebar */
+#side{background:var(--side);border-right:1px solid var(--line);padding:22px 16px;display:flex;flex-direction:column;gap:14px;overflow:hidden}
+.brand{display:flex;align-items:center;gap:10px;font:30px/1 var(--serif);padding:0 6px}
+.orb{width:26px;height:26px;border-radius:50%;background:var(--acc)}
+.primary{background:var(--acc);color:var(--onacc);border:0;border-radius:14px;height:46px;font-weight:600}
+.primary:hover{filter:brightness(1.08)}
+.newChatSide{height:44px;border:1px solid var(--line);background:var(--panel);border-radius:14px;display:flex;align-items:center;gap:10px;padding:0 14px;font-weight:600;text-align:left;box-shadow:0 4px 14px rgba(20,20,43,.04)}
+.newChatSide:hover{border-color:var(--acc);transform:translateY(-1px)}
+.newChatPlus{width:25px;height:25px;border-radius:9px;background:var(--side);display:inline-flex;align-items:center;justify-content:center;color:var(--acc);font-size:18px}
+.row{display:flex;justify-content:space-between;align-items:center;padding:0 6px;color:var(--mute);font-size:13px}
+#lib{flex:1;overflow:auto;display:flex;flex-direction:column;gap:6px}
+.item,.fhead{display:flex;align-items:center;gap:6px;width:100%;text-align:left;border:0;background:transparent;border-radius:10px;padding:8px 10px}
+.item:hover,.fhead:hover{background:var(--panel)}
+.on>.fhead,.item.on{background:var(--panel);box-shadow:inset 0 0 0 1px var(--acc)}
+.folder{border-radius:12px}.folder.over{box-shadow:0 0 0 2px var(--acc);background:var(--panel)}
+.fname{flex:1;text-align:left;border:0;background:transparent;font-weight:600;padding:0}
+.cnt{color:var(--mute);font-size:12px}
+.x{border:0;background:transparent;color:var(--mute);border-radius:6px;width:24px;height:24px;opacity:0}
+.fhead:hover .x,.doc:hover .x,.x:focus-visible{opacity:1}
+.doc{display:flex;align-items:center;gap:8px;padding:6px 10px 6px 22px;border-radius:8px;font-size:13px;color:var(--mute)}
+.doc:hover{background:var(--panel);color:var(--ink)}
+.doc.on{background:var(--panel);box-shadow:inset 0 0 0 1px var(--acc);color:var(--ink)}
+.doc .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border:0;background:none;text-align:left;padding:0;color:inherit}
+.scopeDoc{border:0;background:transparent;color:var(--mute);border-radius:7px;padding:2px 6px;font-size:14px}
+.scopeDoc:hover,.doc.on .scopeDoc{color:var(--acc);background:var(--panel)}
+.foot{display:flex;justify-content:space-between;align-items:center;gap:8px}
+/* chat */
+#chat{display:flex;flex-direction:column;min-width:0;height:100vh;padding:20px 32px 24px}
+#chat>header{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.topLeft,.topRight{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.heroGlow{position:relative}
+.heroGlow::after{content:"";position:absolute;inset:-12px;border-radius:32px;background:radial-gradient(circle at 50% 20%,rgba(59,53,232,.12),transparent 65%);z-index:-1;pointer-events:none}
+
+#msgs{flex:1;overflow:auto;display:flex;flex-direction:column;gap:22px;padding:24px 0;scroll-behavior:smooth}
+.m{max-width:760px;width:100%;margin:0 auto}
+.user{align-self:flex-end;margin-left:auto;max-width:520px;background:var(--ink);color:var(--bg);padding:12px 18px;border-radius:20px 20px 6px 20px;unicode-bidi:plaintext;text-align:start}
+.bot{font:24px/1.5 var(--serif);white-space:pre-wrap;unicode-bidi:plaintext;text-align:start}
+.bot.typing::after{content:"";display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--acc);margin-left:6px;animation:p 1s infinite}
+@keyframes p{50%{opacity:.2}}
+@media(prefers-reduced-motion:reduce){.bot.typing::after{animation:none}}
+.cite{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;border-radius:7px;background:var(--acc);color:var(--onacc);font:600 12px var(--sans);border:0;vertical-align:3px;margin:0 2px;padding:0 5px}
+.found{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:14px;font:14px var(--sans);color:var(--mute)}
+.src{height:34px;padding:0 14px;border-radius:99px;border:1px solid var(--line);background:var(--panel);color:var(--acc);font-weight:500}
+.src:hover{border-color:var(--acc)}
+.warn{font:15px var(--sans);color:var(--mute)}
+#empty{margin:auto;text-align:center;max-width:620px;display:flex;flex-direction:column;gap:14px;align-items:center}
+#empty h1{font:400 56px/1.05 var(--serif);margin:0}
+#empty p{color:var(--mute);margin:0}
+.intro{max-width:680px;font-size:16px;line-height:1.65}
+.caps{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;width:100%;margin-top:6px}
+.cap{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px 16px;text-align:left;color:var(--mute);font-size:13px}
+.cap strong{display:block;color:var(--ink);font-size:14px;margin-bottom:3px}
+@media(max-width:680px){.caps{grid-template-columns:1fr}}
+.drop{width:100%;border:2px dashed var(--line);border-radius:22px;padding:34px;background:var(--panel)}
+#form{max-width:760px;width:100%;margin:0 auto;display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:34px;padding:8px 8px 8px 26px;box-shadow:var(--shadow)}
+#q{flex:1;border:0;background:transparent;color:var(--ink);font:17px var(--sans);height:44px}
+#q:focus-visible{outline:0}
+.go{width:46px;height:46px;border-radius:50%;border:0;background:var(--acc);color:var(--onacc);font-size:20px;display:flex;align-items:center;justify-content:center}
+.go.stop{background:#D84A4A;color:#fff;font-size:16px}
+/* viewer */
+#viewer{background:var(--side);border-left:1px solid var(--line);padding:20px 28px 0;display:flex;flex-direction:column;gap:14px;min-width:0;height:100vh}
+#viewer[hidden]{display:none}
+.vbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+#vtitle{flex:1;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#paper{flex:1;overflow:auto;background:var(--panel);border-radius:14px 14px 0 0;padding:44px 52px;font:17px/1.8 var(--serif);white-space:pre-wrap;overflow-wrap:anywhere;box-shadow:var(--shadow);unicode-bidi:plaintext;text-align:start}
+#orig{flex:1;border:0;border-radius:14px 14px 0 0;background:#fff;width:100%;box-shadow:var(--shadow)}
+#orig[hidden]{display:none}
+mark{background:var(--hl);color:var(--onhl);border-radius:4px;padding:1px 3px;position:relative}
+mark::before{content:"Answer";display:inline-block;margin-right:6px;vertical-align:1px;background:var(--acc);color:var(--onacc);font:600 10px var(--sans);letter-spacing:.02em;padding:1px 7px;border-radius:99px;white-space:nowrap}
+#toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:12px 20px;border-radius:14px;box-shadow:var(--shadow);max-width:560px;white-space:pre-wrap}
+#toast[hidden]{display:none}
+#voiceDock{position:fixed;right:24px;bottom:24px;z-index:30;display:flex;flex-direction:column;align-items:flex-end;gap:10px}
+#voiceFab{width:60px;height:60px;border-radius:50%;border:0;background:var(--acc);color:var(--onacc);font-size:24px;box-shadow:0 14px 34px rgba(59,53,232,.28)}
+#voiceFab.active{animation:voicePulse 1.4s infinite}
+#voicePanel{width:270px;background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:14px 16px;box-shadow:var(--shadow)}
+#voicePanel[hidden]{display:none}
+.voiceHead{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.voiceOrb{width:12px;height:12px;border-radius:50%;background:var(--acc);box-shadow:0 0 0 5px rgba(59,53,232,.08)}
+#voiceStatus{font-size:13px;color:var(--mute);margin-bottom:10px}
+.voiceLangRow{display:flex;gap:6px}
+.voiceLang{border:1px solid var(--line);background:transparent;border-radius:9px;padding:5px 10px;font-size:12px;color:var(--mute)}
+.voiceLang.on{border-color:var(--acc);color:var(--acc);background:rgba(59,53,232,.07)}
+.voiceHint{font-size:11px;color:var(--mute);margin-top:9px}
+@keyframes voicePulse{0%{box-shadow:0 0 0 0 rgba(59,53,232,.35)}70%{box-shadow:0 0 0 16px rgba(59,53,232,0)}100%{box-shadow:0 0 0 0 rgba(59,53,232,0)}}
+.answerTools{display:flex;gap:8px;align-items:center;margin-top:10px;font:13px var(--sans);color:var(--mute);flex-wrap:wrap}
+.mini{border:1px solid var(--line);background:var(--panel);color:var(--mute);border-radius:9px;padding:5px 9px;font-size:12px}
+.mini:hover{border-color:var(--acc);color:var(--ink)}
+.trustPanel{margin-top:10px;border:1px solid var(--line);border-radius:14px;background:var(--panel);padding:12px 14px;font:13px/1.5 var(--sans)}
+.trustPanel[hidden]{display:none}
+.traceTable{width:100%;border-collapse:collapse;margin-top:8px;font-size:12px}
+.traceTable th,.traceTable td{text-align:left;padding:6px;border-bottom:1px solid var(--line)}
+.badges{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.badge{display:inline-flex;align-items:center;gap:5px;padding:4px 8px;border-radius:99px;font:12px var(--sans);border:1px solid var(--line)}
+.badge.good{background:rgba(50,160,90,.10)}
+.badge.weak{background:rgba(220,165,45,.12)}
+.badge.bad{background:rgba(210,75,75,.10)}
+.conflict{margin-top:9px;padding:9px 11px;border-radius:10px;background:rgba(220,165,45,.13);font:13px var(--sans)}
+#voiceLang{border:1px solid var(--line);background:var(--panel);color:var(--mute);border-radius:10px;padding:0 6px;height:34px}
+.mic{width:38px;height:38px;border-radius:50%;border:1px solid var(--line);background:transparent;font-size:17px}
+.mic.listening{background:var(--acc);color:var(--onacc);border-color:var(--acc)}
+#voiceLangSelect{border:1px solid var(--line);background:var(--panel);color:var(--mute);border-radius:10px;padding:0 7px;height:34px;font-size:12px}
+@media(max-width:900px){#app,#app.split{grid-template-columns:1fr}#side,#viewer{display:none}#app.split #viewer{display:flex;position:fixed;inset:0;z-index:5}}
+
+[hidden]{display:none!important}
+#app.collapsed{grid-template-columns:0 minmax(0,1fr)}
+#app.collapsed.split{grid-template-columns:0 minmax(320px,1fr) minmax(360px,1.1fr)}
+#app.collapsed #side{visibility:hidden;padding:0;border:0}
+.star{border:0;background:transparent;color:var(--acc);font-size:18px;padding:2px}
+#suggestBox{max-width:760px;width:100%;margin:0 auto 8px;background:var(--panel);border:1px solid var(--line);border-radius:14px;max-height:220px;overflow:auto}
+#suggestBox button{display:block;width:100%;text-align:start;background:transparent;border:0;padding:9px 16px}
+#suggestBox button:hover,#suggestBox button[aria-selected=true]{background:var(--side)}
+#paper.slide{flex:none;aspect-ratio:16/9;width:100%;padding:24px 32px;border-radius:14px;font:clamp(14px,1.5vw,22px)/1.6 var(--sans);overflow:auto;margin-block:auto;white-space:pre-wrap}
+#paper.slide .slideHeading{font-size:1.35em;font-weight:700;display:block;margin-bottom:12px}
+#paper[hidden]{display:none}#q{min-width:0}#uiLang{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:9px;padding:6px}
+[dir=rtl] #side{border-right:0;border-left:1px solid var(--line)}
+[dir=rtl] #viewer{border-left:0;border-right:1px solid var(--line)}
+[dir=rtl] .item,[dir=rtl] .fname,[dir=rtl] .nm,[dir=rtl] .cap,[dir=rtl] .newChatSide,[dir=rtl] .traceTable th,[dir=rtl] .traceTable td{text-align:start}
+[dir=rtl] #voiceDock{right:auto;left:24px}
+[dir=rtl] .doc{padding:6px 22px 6px 10px}
+[dir=rtl] mark::before{content:"الدليل";margin-right:0;margin-left:6px}
+@media(max-width:900px){#app.collapsed,#app.collapsed.split{grid-template-columns:1fr}#app:not(.collapsed) #side{display:flex;position:fixed;inset-block:0;inset-inline-start:0;width:288px;z-index:40;box-shadow:var(--shadow)}#chat{padding:16px}#paper.slide{font-size:16px}}
+
+#chatList{flex:1;overflow:auto;display:flex;flex-direction:column;gap:6px}
+.savedChat{display:flex;align-items:center;gap:4px;padding:8px;border-radius:10px}
+.savedChat.active,.savedChat:hover{background:var(--panel)}
+.chatTitle{flex:1;min-width:0;text-align:start;text-overflow:ellipsis;overflow:hidden;white-space:nowrap;background:none;border:0;padding:5px;color:inherit}
+.chatAction{background:none;border:0;color:var(--mute);padding:4px;font-size:16px}
+.chatEmpty,.archiveFilter{font-size:13px;color:var(--mute);padding:6px}
+.archiveFilter{display:flex;align-items:center;gap:7px}
+#libraryPanel{position:fixed;inset-block:12px;inset-inline-end:12px;width:min(420px,calc(100vw - 24px));display:flex;flex-direction:column;gap:14px;background:var(--side);border:1px solid var(--line);border-radius:18px;padding:20px;box-shadow:var(--shadow);z-index:45}
+#libraryPanel #lib{min-height:0}
+
+#documentActions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-block:10px;border-bottom:1px solid var(--line)}
+#documentActions button:disabled{opacity:.45;cursor:not-allowed}
+#actionDocName{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;color:var(--mute);unicode-bidi:plaintext}
+
+#folderDialog{width:min(440px,calc(100vw - 32px));border:1px solid var(--line);border-radius:24px;padding:28px;background:var(--panel);color:var(--ink);box-shadow:var(--shadow)}
+#folderDialog::backdrop{background:rgba(15,17,40,.48);backdrop-filter:blur(4px)}
+.folderModalHead{display:flex;align-items:center;justify-content:space-between}
+.folderModalIcon{display:flex;align-items:center;justify-content:center;width:48px;height:48px;border-radius:15px;background:var(--side);color:var(--acc);font-size:26px}
+#folderDialog h2{font-size:24px;margin:18px 0 6px}#folderDialog p{color:var(--mute);font-size:14px;margin:0 0 22px}#folderDialog label{display:block;margin-bottom:8px;font-size:14px;font-weight:600}
+#folderName{width:100%;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--bg);color:var(--ink);font:inherit}
+#folderName[aria-invalid=true]{border-color:#d84a4a}#folderError{color:#d84a4a;font-size:13px;margin-top:8px}
+.folderModalActions{display:flex;justify-content:flex-end;gap:10px;margin-top:24px}.folderModalActions button{padding:10px 20px;border-radius:12px}
+/* =====================================================================
+   VERITY "AURORA ORB" THEME  —  style layer only, no features changed
+   Vibe: glowing AI orb + light-ribbon voice wave on deep space black
+   ===================================================================== */
+[data-theme=dark]{--bg:#03040B;--panel:rgba(17,20,46,.58);--side:rgba(7,9,24,.66);--ink:#EEF0FF;--mute:#8E95C7;--line:rgba(130,145,255,.16);--acc:#5B8CFF;--onacc:#fff;--hl:rgba(255,181,71,.24);--onhl:#FFE6B8;--shadow:0 22px 60px rgba(0,0,0,.6);--solid:#0A0C1F;--fx1:rgba(40,100,255,.30);--fx2:rgba(123,77,255,.24);--fx3:rgba(240,79,208,.13);--star:rgba(255,255,255,.7);--glassHi:rgba(255,255,255,.06)}
+[data-theme=light]{--bg:#F3F4FF;--panel:rgba(255,255,255,.74);--side:rgba(255,255,255,.55);--ink:#11132E;--mute:#626893;--line:rgba(70,80,190,.14);--acc:#3D5BFF;--onacc:#fff;--hl:rgba(255,181,71,.42);--onhl:#3A2500;--shadow:0 18px 50px rgba(60,70,200,.14);--solid:#fff;--fx1:rgba(47,107,255,.17);--fx2:rgba(123,77,255,.15);--fx3:rgba(240,79,208,.10);--star:rgba(70,80,190,.22);--glassHi:rgba(255,255,255,.7)}
+:root{--g1:#2F6BFF;--g2:#7B4DFF;--g3:#F04FD0;--g4:#FFB547;--g5:#2FE0FF;
+  --grad:linear-gradient(120deg,var(--g1),var(--g2) 45%,var(--g3) 80%,var(--g4));
+  --gradCool:linear-gradient(135deg,var(--g1),var(--g2));
+  --sans:"Inter","Segoe UI Variable Display","Segoe UI",system-ui,-apple-system,Roboto,"Noto Sans Arabic","Segoe UI Arabic",sans-serif}
+
+/* ---------- cosmic background: glow fields + drifting particles ---------- */
+html{background:var(--bg)}
+body{background:transparent;position:relative}
+body::before{content:"";position:fixed;inset:-20%;z-index:-2;pointer-events:none;
+  background:radial-gradient(38% 42% at 18% 12%,var(--fx1),transparent 70%),
+             radial-gradient(34% 40% at 88% 92%,var(--fx2),transparent 70%),
+             radial-gradient(28% 30% at 70% 30%,var(--fx3),transparent 70%),
+             radial-gradient(30% 34% at 10% 90%,var(--fx2),transparent 70%);
+  animation:auroraDrift 26s ease-in-out infinite alternate}
+body::after{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:.55;
+  background-image:radial-gradient(1px 1px at 12% 18%,var(--star),transparent 60%),radial-gradient(1.5px 1.5px at 72% 64%,var(--star),transparent 60%),
+    radial-gradient(1px 1px at 38% 82%,var(--star),transparent 60%),radial-gradient(1.2px 1.2px at 86% 22%,var(--star),transparent 60%),
+    radial-gradient(1px 1px at 55% 40%,var(--star),transparent 60%),radial-gradient(2px 2px at 24% 56%,rgba(120,160,255,.6),transparent 60%),
+    radial-gradient(2px 2px at 64% 12%,rgba(255,170,90,.5),transparent 60%),radial-gradient(1.6px 1.6px at 92% 78%,rgba(240,79,208,.5),transparent 60%);
+  background-size:420px 420px,560px 560px,380px 380px,640px 640px,300px 300px,720px 720px,820px 820px,520px 520px;
+  animation:starDrift 90s linear infinite}
+@keyframes auroraDrift{0%{transform:translate3d(0,0,0) scale(1)}50%{transform:translate3d(3%,-2%,0) scale(1.06)}100%{transform:translate3d(-3%,2%,0) scale(1.02)}}
+@keyframes starDrift{to{background-position:420px -420px,-560px 560px,380px 380px,-640px -640px,300px -300px,720px 720px,-820px 820px,520px -520px}}
+
+/* ---------- shared orb recipe ---------- */
+@keyframes orbSpin{to{transform:rotate(360deg)}}
+@keyframes orbSpinBack{to{transform:rotate(-360deg)}}
+@keyframes orbBreath{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}
+@keyframes haloPulse{0%,100%{opacity:.55;transform:scale(1)}50%{opacity:.95;transform:scale(1.12)}}
+@keyframes gradShift{0%{background-position:0% 50%}100%{background-position:200% 50%}}
+
+.orb{position:relative;width:30px;height:30px;flex:none;border-radius:50%;
+  background:radial-gradient(circle at 34% 28%,rgba(255,255,255,.95) 0 7%,transparent 26%),
+             radial-gradient(circle at 72% 70%,rgba(240,79,208,.9),transparent 48%),
+             radial-gradient(circle at 24% 76%,rgba(47,224,255,.85),transparent 46%),
+             conic-gradient(from 0deg,var(--g1),var(--g2),var(--g3),var(--g4),var(--g1));
+  box-shadow:0 0 18px rgba(70,120,255,.75),0 0 40px rgba(123,77,255,.35),inset 0 0 8px rgba(255,255,255,.4);
+  animation:orbSpin 9s linear infinite}
+.brand{font:700 28px/1 var(--sans);letter-spacing:-.03em;gap:12px}
+
+/* ---------- glass surfaces ---------- */
+#side{background:var(--side);border-color:var(--line);backdrop-filter:blur(22px) saturate(140%);-webkit-backdrop-filter:blur(22px) saturate(140%)}
+#viewer{background:var(--side);border-color:var(--line);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px)}
+#libraryPanel,#voicePanel,#suggestBox,#selectMenu,#folderDialog,.trustPanel{background:var(--panel);border-color:var(--line);backdrop-filter:blur(26px) saturate(150%);-webkit-backdrop-filter:blur(26px) saturate(150%);box-shadow:var(--shadow),inset 0 1px 0 var(--glassHi)}
+#folderDialog,#selectMenu,#suggestBox{background:color-mix(in srgb,var(--solid) 86%,transparent)}
+select,select option{background:var(--solid);color:var(--ink)}
+.pill,.ghost,.mini,#uiLang,#voiceLangSelect{background:var(--panel);border-color:var(--line);color:var(--mute);backdrop-filter:blur(12px);transition:all .2s}
+.ghost:hover,.mini:hover{color:var(--ink);border-color:rgba(91,140,255,.55);box-shadow:0 0 0 3px rgba(91,140,255,.12),0 0 18px rgba(91,140,255,.18)}
+#scope{border-color:rgba(91,140,255,.35);color:var(--ink);box-shadow:0 0 16px rgba(91,140,255,.15)}
+#scope::before{content:"";width:7px;height:7px;border-radius:50%;margin-inline-end:8px;background:var(--g5);box-shadow:0 0 10px var(--g5);animation:haloPulse 2.4s ease-in-out infinite}
+.newChatSide{background:var(--panel);border-color:var(--line);box-shadow:inset 0 1px 0 var(--glassHi);transition:all .2s}
+.newChatSide:hover{border-color:transparent;background:linear-gradient(var(--solid),var(--solid)) padding-box,var(--grad) border-box;box-shadow:0 0 24px rgba(123,77,255,.3)}
+.newChatPlus{background:var(--gradCool);color:#fff;box-shadow:0 0 12px rgba(70,120,255,.55)}
+.savedChat{transition:background .2s}
+.savedChat.active{background:linear-gradient(90deg,rgba(47,107,255,.18),rgba(123,77,255,.06));box-shadow:inset 2px 0 0 var(--g1)}
+[dir=rtl] .savedChat.active{box-shadow:inset -2px 0 0 var(--g1);background:linear-gradient(270deg,rgba(47,107,255,.18),rgba(123,77,255,.06))}
+.item:hover,.fhead:hover,.doc:hover,.savedChat:hover{background:rgba(91,140,255,.09)}
+.on>.fhead,.item.on,.doc.on{background:rgba(91,140,255,.12);box-shadow:inset 0 0 0 1px rgba(91,140,255,.45)}
+#documentActions{border-color:var(--line)}
+
+/* ---------- primary actions: aurora gradient ---------- */
+.primary{background:var(--grad);background-size:200% 100%;color:#fff;box-shadow:0 10px 30px rgba(123,77,255,.38),inset 0 1px 0 rgba(255,255,255,.35);transition:transform .2s,box-shadow .2s;animation:gradShift 8s linear infinite}
+.primary:hover{transform:translateY(-1px);box-shadow:0 14px 40px rgba(240,79,208,.4),inset 0 1px 0 rgba(255,255,255,.35);filter:none}
+.go{background:var(--grad);background-size:200% 100%;color:#fff;box-shadow:0 0 22px rgba(91,110,255,.6),inset 0 1px 0 rgba(255,255,255,.4);transition:transform .2s,box-shadow .2s;animation:gradShift 6s linear infinite}
+.go:hover{transform:scale(1.07);box-shadow:0 0 34px rgba(240,79,208,.6)}
+.go.stop{background:linear-gradient(135deg,#FF5A7A,#D8345A);animation:none;box-shadow:0 0 22px rgba(255,90,122,.55)}
+.mic{border-color:var(--line);color:var(--ink);transition:all .2s}
+.mic:hover{border-color:rgba(91,140,255,.6);box-shadow:0 0 16px rgba(91,140,255,.3)}
+.mic.listening{background:var(--gradCool);border-color:transparent;color:#fff;animation:micGlow 1.2s ease-in-out infinite}
+@keyframes micGlow{0%,100%{box-shadow:0 0 0 0 rgba(47,224,255,.5)}50%{box-shadow:0 0 0 9px rgba(47,224,255,0),0 0 26px rgba(91,140,255,.7)}}
+
+/* ---------- composer: glass capsule with glowing gradient rim ---------- */
+#form{position:relative;background:linear-gradient(var(--panel),var(--panel)) padding-box,linear-gradient(120deg,rgba(91,140,255,.45),rgba(123,77,255,.25),rgba(240,79,208,.35)) border-box;border:1px solid transparent;backdrop-filter:blur(24px) saturate(150%);-webkit-backdrop-filter:blur(24px) saturate(150%);box-shadow:var(--shadow),0 0 40px rgba(70,110,255,.14);transition:box-shadow .3s}
+#form:focus-within{box-shadow:var(--shadow),0 0 0 4px rgba(91,140,255,.12),0 0 60px rgba(123,77,255,.32)}
+#q::placeholder{color:var(--mute)}
+
+/* ---------- empty state hero: the thinking sphere ---------- */
+#empty{gap:16px}
+#empty::before{content:"";width:150px;height:150px;border-radius:50%;margin-bottom:10px;flex:none;
+  background:radial-gradient(circle at 50% 50%,transparent 52%,rgba(120,170,255,.55) 64%,transparent 70%),
+             radial-gradient(circle at 32% 28%,rgba(255,255,255,.85) 0 4%,transparent 20%),
+             radial-gradient(circle at 66% 66%,rgba(240,79,208,.85),transparent 42%),
+             radial-gradient(circle at 30% 70%,rgba(47,224,255,.8),transparent 40%),
+             radial-gradient(circle at 70% 30%,rgba(255,181,71,.55),transparent 34%),
+             conic-gradient(from 90deg,#1A3DFF,#6A3BFF,#F04FD0,#2FE0FF,#1A3DFF);
+  box-shadow:0 0 50px rgba(47,107,255,.75),0 0 120px rgba(123,77,255,.45),0 0 200px rgba(47,107,255,.25),inset 0 0 30px rgba(255,255,255,.35),inset 0 -18px 40px rgba(10,20,90,.6);
+  animation:orbSpin 14s linear infinite}
+.heroGlow::after{inset:-80px -40px auto;height:340px;border-radius:50%;background:radial-gradient(circle at 50% 30%,rgba(47,107,255,.32),rgba(123,77,255,.12) 40%,transparent 68%);filter:blur(10px);animation:haloPulse 6s ease-in-out infinite}
+#empty h1{font:700 54px/1.05 var(--sans);letter-spacing:-.045em;background:linear-gradient(110deg,var(--ink) 20%,#9DB6FF 45%,#C9A6FF 60%,#FFC98A 80%,var(--ink));background-size:220% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:gradShift 10s linear infinite}
+[dir=rtl] #empty h1{letter-spacing:0}
+.intro{color:var(--mute)}
+.cap{position:relative;background:var(--panel);border-color:var(--line);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);box-shadow:inset 0 1px 0 var(--glassHi);transition:transform .25s,box-shadow .25s,border-color .25s;overflow:hidden}
+.cap::before{content:"";position:absolute;inset:0 0 auto;height:2px;background:var(--grad);opacity:.0;transition:opacity .25s}
+.cap:hover{transform:translateY(-3px);border-color:rgba(123,77,255,.45);box-shadow:0 16px 40px rgba(47,107,255,.2),inset 0 1px 0 var(--glassHi)}
+.cap:hover::before{opacity:1}
+.cap strong{font-weight:650}
+.cap strong::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;margin-inline-end:8px;vertical-align:1px;background:var(--grad);box-shadow:0 0 10px rgba(123,77,255,.8)}
+.drop{background:var(--panel);border-color:rgba(91,140,255,.35);backdrop-filter:blur(16px)}
+
+/* ---------- messages ---------- */
+.user{background:var(--gradCool);color:#fff;border:1px solid rgba(255,255,255,.14);box-shadow:0 10px 30px rgba(47,107,255,.35),inset 0 1px 0 rgba(255,255,255,.25)}
+.bot{font:400 19px/1.7 var(--sans);letter-spacing:-.005em}
+.bot.typing::after{background:var(--grad);box-shadow:0 0 12px rgba(123,77,255,.9);width:10px;height:10px}
+.cite{background:var(--gradCool);color:#fff;box-shadow:0 0 12px rgba(70,120,255,.55);transition:transform .15s}
+.cite:hover{transform:translateY(-1px) scale(1.08)}
+.src{background:var(--panel);border-color:rgba(91,140,255,.35);color:var(--ink);backdrop-filter:blur(12px);transition:all .2s}
+.src:hover{border-color:transparent;background:linear-gradient(var(--solid),var(--solid)) padding-box,var(--grad) border-box;box-shadow:0 0 22px rgba(123,77,255,.35)}
+.badge{border-color:var(--line)}
+
+/* ---------- document viewer ---------- */
+#paper{background:color-mix(in srgb,var(--solid) 92%,transparent);border:1px solid var(--line);border-bottom:0;box-shadow:var(--shadow),inset 0 1px 0 var(--glassHi);font:17px/1.85 var(--sans)}
+mark{background:var(--hl);color:var(--onhl);box-shadow:0 0 0 1px rgba(255,181,71,.55),0 0 22px rgba(255,181,71,.35);border-radius:5px}
+mark::before{background:linear-gradient(135deg,var(--g4),var(--g3));color:#fff;box-shadow:0 0 10px rgba(255,140,80,.55)}
+#toast{background:color-mix(in srgb,var(--solid) 90%,transparent);color:var(--ink);border:1px solid var(--line);backdrop-filter:blur(20px);box-shadow:var(--shadow),0 0 30px rgba(91,140,255,.2)}
+.star{color:var(--g4);text-shadow:0 0 10px rgba(255,181,71,.6)}
+
+/* ---------- voice: floating orb button ---------- */
+#voiceFab{position:relative;isolation:isolate;width:66px;height:66px;background:transparent;color:#fff;font-size:22px;box-shadow:0 0 30px rgba(47,107,255,.65),0 0 70px rgba(123,77,255,.35);transition:transform .25s}
+#voiceFab::before,#voiceFab::after{content:"";position:absolute;inset:0;border-radius:50%;z-index:-1}
+#voiceFab::before{background:radial-gradient(circle at 34% 28%,rgba(255,255,255,.8) 0 6%,transparent 24%),radial-gradient(circle at 70% 72%,rgba(240,79,208,.85),transparent 46%),radial-gradient(circle at 26% 74%,rgba(47,224,255,.8),transparent 44%),conic-gradient(from 0deg,var(--g1),var(--g2),var(--g3),var(--g4),var(--g1));animation:orbSpin 7s linear infinite}
+#voiceFab::after{inset:-7px;border:1.5px solid rgba(120,170,255,.55);box-shadow:0 0 18px rgba(91,140,255,.6),inset 0 0 14px rgba(91,140,255,.35);animation:haloPulse 3s ease-in-out infinite}
+#voiceFab:hover{transform:scale(1.07)}
+#voiceFab.active{animation:none;box-shadow:0 0 40px rgba(47,224,255,.7),0 0 90px rgba(240,79,208,.45)}
+#voiceFab.active::before{animation-duration:2.2s}
+#voiceFab.active::after{animation-duration:1.2s;border-color:rgba(47,224,255,.8)}
+#voiceFab:disabled{opacity:.5;filter:grayscale(.6)}
+
+/* ---------- voice: panel with big orb + light-ribbon wave ---------- */
+#voicePanel{width:320px;border-radius:26px;padding:18px 18px 16px;text-align:center;background:linear-gradient(180deg,color-mix(in srgb,var(--solid) 80%,transparent),color-mix(in srgb,#000 70%,transparent));border:1px solid rgba(120,150,255,.2)}
+[data-theme=light] #voicePanel{background:linear-gradient(180deg,rgba(14,16,40,.92),rgba(3,4,12,.96));color:#EEF0FF}
+[data-theme=light] #voicePanel #voiceStatus,[data-theme=light] #voicePanel .voiceHint{color:#9AA0CC}
+.voiceHead{justify-content:center;font-weight:650;letter-spacing:.01em}
+.voiceOrb{width:9px;height:9px;background:var(--g5);box-shadow:0 0 10px var(--g5);animation:haloPulse 2s ease-in-out infinite}
+.voiceStage{position:relative;height:200px;margin:4px 0 2px;display:flex;align-items:center;justify-content:center}
+.vOrb{position:relative;width:118px;height:118px;border-radius:50%;transition:transform .5s cubic-bezier(.2,.8,.2,1)}
+.vOrb i{position:absolute;inset:0;border-radius:50%}
+.vOrb i:nth-child(1){background:radial-gradient(circle at 50% 50%,#020414 30%,transparent 62%),conic-gradient(from 0deg,#1E5BFF,#2FE0FF,#7B4DFF,#F04FD0,#1E5BFF);filter:blur(1px);animation:orbSpin 6s linear infinite}
+.vOrb i:nth-child(2){inset:6px;background:radial-gradient(circle at 30% 30%,rgba(255,255,255,.75) 0 4%,transparent 22%),radial-gradient(circle at 65% 70%,rgba(240,79,208,.75),transparent 45%),radial-gradient(circle at 30% 70%,rgba(47,224,255,.7),transparent 45%),radial-gradient(circle,rgba(30,70,255,.85),rgba(10,15,70,.95));mix-blend-mode:screen;animation:orbSpinBack 9s linear infinite}
+.vOrb i:nth-child(3){inset:-10px;background:radial-gradient(circle,transparent 56%,rgba(80,140,255,.55) 63%,rgba(47,224,255,.25) 67%,transparent 74%);filter:blur(2px);animation:haloPulse 3.2s ease-in-out infinite}
+.vOrb::after{content:"";position:absolute;inset:-34px;border-radius:50%;background:radial-gradient(circle,rgba(47,107,255,.45),rgba(123,77,255,.18) 45%,transparent 70%);filter:blur(8px);z-index:-1;animation:haloPulse 4s ease-in-out infinite}
+.vWave{position:absolute;left:0;right:0;overflow:hidden;-webkit-mask-image:linear-gradient(90deg,transparent,#000 18%,#000 82%,transparent);mask-image:linear-gradient(90deg,transparent,#000 18%,#000 82%,transparent);top:50%;height:120px;transform:translateY(-50%);opacity:0;transition:opacity .45s;pointer-events:none;-webkit-box-reflect:below -28px linear-gradient(transparent 55%,rgba(255,255,255,.22))}
+.vWave svg{width:100%;height:100%;overflow:hidden;filter:drop-shadow(0 0 6px rgba(120,120,255,.9)) drop-shadow(0 0 16px rgba(240,79,208,.5))}
+.vWave path{fill:none;stroke-linecap:round;mix-blend-mode:screen;animation:waveRun 3.2s linear infinite;transform-box:view-box}
+.vWave path:nth-child(2){animation-duration:4.1s}.vWave path:nth-child(3){animation-duration:2.6s}.vWave path:nth-child(4){animation-duration:5s}.vWave path:nth-child(5){animation-duration:3.6s}
+.vWave g{transform-origin:50% 50%;transform-box:view-box;animation:waveAmp 1.1s ease-in-out infinite}
+@keyframes waveRun{to{transform:translateX(-200px)}}
+@keyframes waveAmp{0%,100%{transform:scaleY(.55)}50%{transform:scaleY(1.15)}}
+/* states (set on #voiceDock by JS) */
+#voiceDock[data-state=listening] .vOrb{transform:scale(1.08)}
+#voiceDock[data-state=listening] .vOrb i:nth-child(1){animation-duration:2.4s}
+#voiceDock[data-state=listening] .vOrb i:nth-child(3){animation-duration:1s}
+#voiceDock[data-state=thinking] .vOrb i:nth-child(1){animation-duration:1.1s}
+#voiceDock[data-state=thinking] .vOrb i:nth-child(2){animation-duration:1.8s;filter:hue-rotate(40deg)}
+#voiceDock[data-state=thinking] .vOrb{animation:orbBreath 1.2s ease-in-out infinite}
+#voiceDock[data-state=speaking] .vOrb{transform:scale(.62);opacity:.9}
+#voiceDock[data-state=speaking] .vWave{opacity:1}
+#voiceStatus{font-size:14px;font-weight:550;color:var(--ink);margin:4px 0 12px;letter-spacing:.01em}
+#voiceDock[data-state=listening] #voiceStatus{color:var(--g5);text-shadow:0 0 12px rgba(47,224,255,.6)}
+#voiceDock[data-state=thinking] #voiceStatus{background:var(--grad);background-size:200% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:gradShift 2s linear infinite}
+.voiceLangRow{justify-content:center}
+.voiceLang{border-color:rgba(130,145,255,.25);color:#9AA0CC;border-radius:99px;padding:5px 14px}
+.voiceLang.on{background:var(--gradCool);border-color:transparent;color:#fff;box-shadow:0 0 14px rgba(70,120,255,.55)}
+
+/* ---------- scrollbars ---------- */
+*{scrollbar-width:thin;scrollbar-color:rgba(120,140,255,.28) transparent}
+::-webkit-scrollbar{width:8px;height:8px}::-webkit-scrollbar-thumb{background:rgba(120,140,255,.28);border-radius:99px}::-webkit-scrollbar-track{background:transparent}
+
+/* ---------- reduced motion: keep the look, stop the movement ---------- */
+@media(prefers-reduced-motion:reduce){
+  body::before,body::after,.orb,#empty::before,.heroGlow::after,#empty h1,.primary,.go,#voiceFab::before,#voiceFab::after,.vOrb,.vOrb i,.vOrb::after,.vWave path,.vWave g,#scope::before,.voiceOrb,.mic.listening,#voiceStatus{animation:none!important}
+}
+/* =================== VERITY "WOW 2" — cinematic layer =================== */
+@property --ang{syntax:'<angle>';inherits:false;initial-value:0deg}
+[data-theme=dark]{--formBg:#0B0D21}
+[data-theme=light]{--formBg:#FFFFFF}
+@keyframes spinAng{to{--ang:360deg}}
+@keyframes riseIn{from{opacity:0;transform:translateY(14px);filter:blur(6px)}to{opacity:1;transform:none;filter:none}}
+@keyframes shimmerText{to{background-position:-200% 0}}
+
+/* living particle orb (canvas) replaces the CSS hero sphere */
+#empty.hasOrb::before{display:none}
+.heroOrb{width:250px;height:250px;margin:-30px 0 -22px;flex:none;cursor:grab;image-rendering:auto}
+.heroOrb:active{cursor:grabbing}
+/* staggered entrance of the home screen */
+#empty>*{animation:riseIn .8s cubic-bezier(.2,.8,.2,1) backwards}
+#empty>*:nth-child(2){animation-delay:.08s}#empty>*:nth-child(3){animation-delay:.16s}#empty>*:nth-child(4){animation-delay:.26s}#empty>*:nth-child(5){animation-delay:.36s}#empty>*:nth-child(6){animation-delay:.44s}
+.caps .cap{animation:riseIn .7s cubic-bezier(.2,.8,.2,1) both}
+.caps .cap:nth-child(1){animation-delay:.3s}.caps .cap:nth-child(2){animation-delay:.38s}.caps .cap:nth-child(3){animation-delay:.46s}.caps .cap:nth-child(4){animation-delay:.54s}
+
+/* cursor spotlight on cards and chips */
+.cap::after,.src::after,.newChatSide::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;opacity:0;transition:opacity .25s;background:radial-gradient(180px circle at var(--mx,50%) var(--my,50%),rgba(120,150,255,.22),transparent 60%)}
+.src,.newChatSide{position:relative;overflow:hidden}
+.cap:hover::after,.src:hover::after,.newChatSide:hover::after{opacity:1}
+/* soft light that follows the mouse across the space background */
+#cursorGlow{position:fixed;left:0;top:0;width:640px;height:640px;margin:-320px 0 0 -320px;border-radius:50%;pointer-events:none;z-index:-1;background:radial-gradient(circle,rgba(70,110,255,.13),rgba(123,77,255,.06) 40%,transparent 70%);transition:opacity .4s;will-change:transform}
+[data-theme=light] #cursorGlow{background:radial-gradient(circle,rgba(70,110,255,.10),transparent 65%)}
+
+/* messages float in */
+.m{animation:riseIn .55s cubic-bezier(.2,.8,.2,1) both}
+/* AI "thinking" indicator with live pipeline steps */
+.thinking{display:inline-flex;align-items:center;gap:12px;font:500 15px var(--sans);padding:8px 16px 8px 8px;border-radius:99px;background:var(--panel);border:1px solid var(--line);backdrop-filter:blur(14px);box-shadow:0 0 30px rgba(70,110,255,.15)}
+[dir=rtl] .thinking{padding:8px 8px 8px 16px}
+.tOrb{position:relative;width:26px;height:26px;border-radius:50%;flex:none;background:radial-gradient(circle at 34% 28%,rgba(255,255,255,.9) 0 7%,transparent 26%),radial-gradient(circle at 72% 70%,rgba(240,79,208,.9),transparent 48%),radial-gradient(circle at 24% 76%,rgba(47,224,255,.85),transparent 46%),conic-gradient(from 0deg,var(--g1),var(--g2),var(--g3),var(--g4),var(--g1));box-shadow:0 0 16px rgba(70,120,255,.8);animation:orbSpin 1.4s linear infinite,orbBreath 1.4s ease-in-out infinite}
+.tText{background:linear-gradient(90deg,var(--mute) 0%,var(--mute) 35%,#fff 50%,var(--mute) 65%,var(--mute) 100%);background-size:200% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:shimmerText 1.8s linear infinite}
+[data-theme=light] .tText{background-image:linear-gradient(90deg,var(--mute) 0%,var(--mute) 35%,var(--g2) 50%,var(--mute) 65%,var(--mute) 100%)}
+.tText.swap{animation:shimmerText 1.8s linear infinite,riseIn .4s ease both}
+.bot.typing:has(.thinking)::after{display:none}
+/* finished answer gets one aurora light sweep */
+.bot{position:relative}
+.bot.revealed::before{content:"";position:absolute;inset:-6px -14px;border-radius:18px;pointer-events:none;background:linear-gradient(100deg,transparent 30%,rgba(91,140,255,.16) 45%,rgba(240,79,208,.14) 55%,transparent 70%);background-size:250% 100%;animation:sweep 1.3s ease-out both}
+@keyframes sweep{from{background-position:120% 0;opacity:1}to{background-position:-60% 0;opacity:0}}
+
+/* composer: solid inner so the rim stays a thin line; spinning aurora rim while the AI works */
+#form{background:linear-gradient(var(--formBg),var(--formBg)) padding-box,linear-gradient(120deg,rgba(91,140,255,.55),rgba(123,77,255,.3),rgba(240,79,208,.45)) border-box}
+#form:has(.go.stop){border-width:1.5px;background:linear-gradient(var(--formBg),var(--formBg)) padding-box,conic-gradient(from var(--ang),#2F6BFF,#2FE0FF,#7B4DFF,#F04FD0,#FFB547,#2F6BFF) border-box;animation:spinAng 2.2s linear infinite;box-shadow:var(--shadow),0 0 50px rgba(123,77,255,.35),0 0 90px rgba(47,107,255,.2)}
+
+/* cinematic intro */
+#intro{position:fixed;inset:0;z-index:100;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;background:radial-gradient(circle at 50% 45%,#0A1240 0%,#03040B 60%);cursor:pointer;animation:introOut .9s ease 2.3s forwards}
+#intro .iOrb{width:120px;height:120px;border-radius:50%;background:radial-gradient(circle at 32% 28%,rgba(255,255,255,.9) 0 5%,transparent 22%),radial-gradient(circle at 66% 66%,rgba(240,79,208,.85),transparent 42%),radial-gradient(circle at 30% 70%,rgba(47,224,255,.8),transparent 40%),conic-gradient(from 90deg,#1A3DFF,#6A3BFF,#F04FD0,#2FE0FF,#1A3DFF);box-shadow:0 0 60px rgba(47,107,255,.8),0 0 160px rgba(123,77,255,.5),inset 0 0 30px rgba(255,255,255,.35);animation:introOrb 1.4s cubic-bezier(.2,.9,.2,1) both,orbSpin 6s linear infinite}
+#intro .iName{font:700 64px/1 var(--sans);letter-spacing:.5em;color:#EEF0FF;text-indent:.5em;opacity:0;animation:introName 1.3s cubic-bezier(.2,.8,.2,1) .45s forwards;text-shadow:0 0 30px rgba(91,140,255,.7)}
+#intro .iTag{font:500 16px var(--sans);letter-spacing:.18em;text-transform:uppercase;color:#9DB0FF;opacity:0;animation:riseIn .9s ease 1.05s forwards}
+[dir=rtl] #intro .iTag{letter-spacing:0}
+@keyframes introOrb{from{transform:scale(.1);opacity:0;filter:blur(12px)}60%{opacity:1}to{transform:scale(1);opacity:1;filter:none}}
+@keyframes introName{from{opacity:0;letter-spacing:.9em;filter:blur(10px)}to{opacity:1;letter-spacing:.08em;filter:none}}
+@keyframes introOut{to{opacity:0;visibility:hidden;transform:scale(1.04)}}
+
+@media(prefers-reduced-motion:reduce){
+  #intro{display:none}
+  #empty>*,.caps .cap,.m,.tOrb,.tText,.bot.revealed::before,#form:has(.go.stop){animation:none!important}
+  #cursorGlow{display:none}
+}
+/* =================== VERITY FONTS (bundled, work offline) =================== */
+@font-face{font-family:"Sora";src:url("fonts/sora-latin-wght-normal.woff2") format("woff2"),url("fonts/fonts/sora-latin-wght-normal.woff2") format("woff2");font-weight:100 800;font-style:normal;font-display:swap}
+@font-face{font-family:"Inter";src:url("fonts/inter-latin-wght-normal.woff2") format("woff2"),url("fonts/fonts/inter-latin-wght-normal.woff2") format("woff2");font-weight:100 900;font-style:normal;font-display:swap}
+@font-face{font-family:"IBM Plex Sans Arabic";src:url("fonts/ibm-plex-sans-arabic-arabic-400-normal.woff2") format("woff2"),url("fonts/fonts/ibm-plex-sans-arabic-arabic-400-normal.woff2") format("woff2");font-weight:400;font-style:normal;font-display:swap;unicode-range:U+0600-06FF,U+0750-077F,U+0870-08FF,U+FB50-FDFF,U+FE70-FEFF,U+200C-200E,U+2010-2011,U+204F,U+2E41}
+@font-face{font-family:"IBM Plex Sans Arabic";src:url("fonts/ibm-plex-sans-arabic-arabic-500-normal.woff2") format("woff2"),url("fonts/fonts/ibm-plex-sans-arabic-arabic-500-normal.woff2") format("woff2");font-weight:500;font-style:normal;font-display:swap;unicode-range:U+0600-06FF,U+0750-077F,U+0870-08FF,U+FB50-FDFF,U+FE70-FEFF,U+200C-200E,U+2010-2011,U+204F,U+2E41}
+@font-face{font-family:"IBM Plex Sans Arabic";src:url("fonts/ibm-plex-sans-arabic-arabic-600-normal.woff2") format("woff2"),url("fonts/fonts/ibm-plex-sans-arabic-arabic-600-normal.woff2") format("woff2");font-weight:600;font-style:normal;font-display:swap;unicode-range:U+0600-06FF,U+0750-077F,U+0870-08FF,U+FB50-FDFF,U+FE70-FEFF,U+200C-200E,U+2010-2011,U+204F,U+2E41}
+@font-face{font-family:"IBM Plex Sans Arabic";src:url("fonts/ibm-plex-sans-arabic-arabic-700-normal.woff2") format("woff2"),url("fonts/fonts/ibm-plex-sans-arabic-arabic-700-normal.woff2") format("woff2");font-weight:700;font-style:normal;font-display:swap;unicode-range:U+0600-06FF,U+0750-077F,U+0870-08FF,U+FB50-FDFF,U+FE70-FEFF,U+200C-200E,U+2010-2011,U+204F,U+2E41}
+:root{--sans:"Inter","IBM Plex Sans Arabic","Segoe UI",system-ui,-apple-system,Roboto,sans-serif;--display:"Sora","IBM Plex Sans Arabic","Inter","Segoe UI",sans-serif;--serif:var(--sans)}
+body{font-feature-settings:"cv11","ss01";-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+.brand,#empty h1,#intro .iName,#folderDialog h2,.voiceHead strong{font-family:var(--display)}
+.brand{font-weight:700;letter-spacing:-.02em}
+#empty h1{font-weight:700;letter-spacing:-.035em}
+#intro .iName{font-weight:600}
+[dir=rtl] .brand,[dir=rtl] #empty h1{letter-spacing:0}
+[dir=rtl] .bot{line-height:1.85}
+#intro .iOrb,#voiceFab::before,.orb,.tOrb{outline:1px solid rgba(255,255,255,.18);outline-offset:-1px}
+/* =================== VERITY ELEGANT TITLES (Playfair Display) =================== */
+@font-face{font-family:"Playfair Display";src:url("fonts/playfair-display-latin-wght-normal.woff2") format("woff2"),url("fonts/fonts/playfair-display-latin-wght-normal.woff2") format("woff2");font-weight:400 900;font-style:normal;font-display:swap}
+@font-face{font-family:"Playfair Display";src:url("fonts/playfair-display-latin-wght-italic.woff2") format("woff2"),url("fonts/fonts/playfair-display-latin-wght-italic.woff2") format("woff2");font-weight:400 900;font-style:italic;font-display:swap}
+:root{--display:"Playfair Display","IBM Plex Sans Arabic",Georgia,serif}
+.brand{font-family:var(--display);font-weight:600;font-size:31px;letter-spacing:-.005em}
+#empty h1{font-family:var(--display);font-weight:500;font-size:62px;line-height:1.05;letter-spacing:-.01em;background:none;-webkit-background-clip:border-box;background-clip:border-box;color:var(--ink);animation:none}
+#empty h1 em{font-style:italic;font-weight:500;padding-inline-end:.08em;background:linear-gradient(110deg,#8FB0FF,#C9A6FF 45%,#F3A6D8 70%,#FFC98A);background-size:200% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:gradShift 8s linear infinite alternate}
+[data-theme=light] #empty h1 em{background-image:linear-gradient(110deg,#3D5BFF,#7B4DFF 45%,#D23FB5 70%,#E08A1E)}
+[dir=rtl] #empty h1{font-weight:600;font-size:54px}
+#intro .iName{font-family:var(--display);font-weight:500;font-style:italic}
+#folderDialog h2{font-family:var(--display);font-weight:600}
+.voiceHead strong{font-family:var(--display);font-weight:600;font-size:17px;letter-spacing:.01em}
+@media(prefers-reduced-motion:reduce){#empty h1 em{animation:none}}
+/* =================== VERITY "WOW 3" — signature features =================== */
+/* ---- Proof Beam ---- */
+#beamLayer{position:fixed;inset:0;width:100vw;height:100vh;pointer-events:none;z-index:90;overflow:visible}
+mark.ignite{animation:ignite 1.6s ease-out}
+@keyframes ignite{0%{box-shadow:0 0 0 0 rgba(255,181,71,.9),0 0 0 0 rgba(240,79,208,.6);filter:brightness(1.8)}35%{box-shadow:0 0 0 6px rgba(255,181,71,.35),0 0 40px 12px rgba(240,79,208,.45);filter:brightness(1.3)}100%{box-shadow:0 0 0 1px rgba(255,181,71,.55),0 0 22px rgba(255,181,71,.35);filter:none}}
+
+/* ---- Truth Score ring ---- */
+.truth{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--panel);border-radius:99px;padding:3px 12px 3px 4px;font:600 12px var(--sans);color:var(--ink);backdrop-filter:blur(12px);transition:box-shadow .2s,border-color .2s}
+[dir=rtl] .truth{padding:3px 4px 3px 12px}
+.truth:hover{border-color:var(--tc);box-shadow:0 0 18px color-mix(in srgb,var(--tc) 45%,transparent)}
+.truth svg{width:28px;height:28px;transform:rotate(-90deg);flex:none;overflow:visible}
+.truth .bg{fill:none;stroke:var(--line);stroke-width:3.5}
+.truth .fg{fill:none;stroke:var(--tc);stroke-width:3.5;stroke-linecap:round;stroke-dasharray:69.1;stroke-dashoffset:69.1;transition:stroke-dashoffset 1.4s cubic-bezier(.2,.8,.2,1);filter:drop-shadow(0 0 4px var(--tc))}
+.truth .num{font-variant-numeric:tabular-nums;color:var(--tc)}
+.truth .lbl{color:var(--mute);font-weight:500}
+
+/* ---- voice orb reacts to your real voice (--lvl = 0..1 loudness) ---- */
+#voiceDock{--lvl:0}
+.vOrb{scale:calc(1 + var(--lvl) * .32);transition:transform .5s cubic-bezier(.2,.8,.2,1),scale .08s linear}
+.vOrb i:nth-child(3){scale:calc(1 + var(--lvl) * .55)}
+.vOrb::after{scale:calc(1 + var(--lvl) * .7)}
+.vWave svg{transform:scaleY(calc(.45 + var(--lvl) * 1.25));transition:transform .08s linear}
+#voiceFab.active{scale:calc(1 + var(--lvl) * .14)}
+.vMeter{display:flex;justify-content:center;gap:4px;height:18px;align-items:center;margin:-4px 0 8px}
+.vMeter span{width:4px;border-radius:4px;background:linear-gradient(var(--g5),var(--g2));height:calc(4px + var(--lvl) * var(--h,14px));opacity:calc(.35 + var(--lvl));transition:height .08s linear}
+.vMeter span:nth-child(1),.vMeter span:nth-child(7){--h:6px}.vMeter span:nth-child(2),.vMeter span:nth-child(6){--h:10px}.vMeter span:nth-child(3),.vMeter span:nth-child(5){--h:14px}.vMeter span:nth-child(4){--h:18px}
+
+/* ---- document scanner during upload ---- */
+#scanCard{position:fixed;left:50%;bottom:118px;transform:translateX(-50%);z-index:60;width:min(400px,calc(100vw - 32px));display:flex;gap:16px;align-items:center;padding:16px 18px;border-radius:22px;background:color-mix(in srgb,var(--solid) 88%,transparent);border:1px solid rgba(120,150,255,.28);backdrop-filter:blur(24px);box-shadow:var(--shadow),0 0 50px rgba(70,110,255,.25);animation:riseIn .5s cubic-bezier(.2,.8,.2,1) both}
+#scanCard.out{animation:scanOut .5s ease forwards}
+@keyframes scanOut{to{opacity:0;transform:translate(-50%,10px)}}
+.scanDoc{position:relative;width:54px;height:68px;flex:none;border-radius:8px;background:linear-gradient(160deg,#1A2050,#0C1030);border:1px solid rgba(140,160,255,.35);overflow:hidden}
+[data-theme=light] .scanDoc{background:linear-gradient(160deg,#fff,#EEF0FF)}
+.scanDoc i{position:absolute;left:9px;right:9px;height:3px;border-radius:2px;background:rgba(140,160,255,.35)}
+.scanDoc i:nth-child(1){top:12px;right:20px}.scanDoc i:nth-child(2){top:21px}.scanDoc i:nth-child(3){top:30px}.scanDoc i:nth-child(4){top:39px;right:16px}.scanDoc i:nth-child(5){top:48px}.scanDoc i:nth-child(6){top:57px;right:24px}
+.scanDoc::after{content:"";position:absolute;left:-10%;right:-10%;height:14px;top:-14px;background:linear-gradient(180deg,transparent,rgba(47,224,255,.35) 60%,#7FF3FF 88%,transparent);box-shadow:0 0 16px 3px rgba(47,224,255,.65);animation:laser 1.6s ease-in-out infinite}
+@keyframes laser{0%{top:-14px}50%{top:calc(100% - 4px)}100%{top:-14px}}
+#scanCard.done .scanDoc::after{display:none}
+#scanCard.done .scanDoc{border-color:#3BE0A0;box-shadow:0 0 22px rgba(59,224,160,.5)}
+#scanCard.done .scanDoc::before{content:"✓";position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:700 28px var(--sans);color:#3BE0A0;background:rgba(5,30,25,.55);z-index:1}
+.scanInfo{min-width:0;flex:1}
+.scanTitle{font:600 15px var(--sans);color:var(--ink)}
+.scanFiles{font-size:12px;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:2px 0 6px;unicode-bidi:plaintext}
+.scanPhase{font-size:13px;display:flex;justify-content:space-between;gap:10px}
+.scanPhase .tText{flex:1}
+.scanTime{color:var(--mute);font-variant-numeric:tabular-nums}
+.scanBar{height:3px;border-radius:3px;margin-top:8px;background:var(--line);overflow:hidden}
+.scanBar b{display:block;height:100%;width:40%;border-radius:3px;background:var(--grad);animation:scanBar 1.4s ease-in-out infinite}
+@keyframes scanBar{0%{transform:translateX(-100%)}100%{transform:translateX(260%)}}
+#scanCard.done .scanBar b{width:100%;animation:none;background:#3BE0A0}
+body.scanning #toast{display:none}
+
+/* ---- knowledge galaxy (library star map) ---- */
+.galaxy{position:relative;height:230px;flex:none;border-radius:16px;overflow:hidden;border:1px solid rgba(120,150,255,.2);background:radial-gradient(70% 80% at 30% 20%,rgba(47,107,255,.22),transparent 70%),radial-gradient(60% 70% at 85% 90%,rgba(240,79,208,.16),transparent 70%),#04051A}
+.galaxy canvas{width:100%;height:100%;display:block;cursor:crosshair}
+.galaxy canvas.hot{cursor:pointer}
+.gTitle{position:absolute;top:10px;inset-inline-start:14px;font:600 12px var(--sans);letter-spacing:.08em;text-transform:uppercase;color:#9DB0FF;pointer-events:none}
+[dir=rtl] .gTitle{letter-spacing:0}
+.gHint{position:absolute;bottom:9px;inset-inline-start:14px;font-size:11px;color:#8088B8;pointer-events:none}
+.gTip{position:absolute;pointer-events:none;padding:6px 10px;border-radius:10px;background:rgba(10,12,32,.92);border:1px solid rgba(120,150,255,.35);color:#EEF0FF;font-size:12px;white-space:nowrap;transform:translate(-50%,calc(-100% - 12px));box-shadow:0 8px 24px rgba(0,0,0,.5);unicode-bidi:plaintext}
+.gTip small{display:block;color:#9AA0CC;font-size:11px}
+
+@media(prefers-reduced-motion:reduce){mark.ignite,.scanDoc::after,.scanBar b{animation:none!important}}
+/* =================== PERFORMANCE: calm the background while the AI is working =================== */
+body::after{inset:-60px;animation:starDrift2 60s ease-in-out infinite alternate;will-change:transform}
+@keyframes starDrift2{from{transform:translate3d(0,0,0)}to{transform:translate3d(-50px,40px,0)}}
+body::before{will-change:transform}
+body.aiBusy::before,body.aiBusy::after,body.aiBusy .orb,body.aiBusy #voiceFab::before,body.aiBusy #voiceFab::after,body.aiBusy #scope::before,body.aiBusy .primary,body.aiBusy #empty h1 em{animation-play-state:paused!important}
+body.aiBusy #cursorGlow{opacity:0}
+/* =================== new mic + voice icons =================== */
+.mic{display:inline-flex;align-items:center;justify-content:center;padding:0;color:var(--ink)}
+.mic .ic{width:19px;height:19px}
+#voiceFab{display:flex;align-items:center;justify-content:center}
+#voiceFab .ic{width:28px;height:28px;color:#fff;filter:drop-shadow(0 1px 3px rgba(10,15,60,.55)) drop-shadow(0 0 6px rgba(255,255,255,.35))}
+#voiceFab .wave path{transform-box:fill-box;transform-origin:center;animation:icWave 1.6s ease-in-out infinite}
+#voiceFab .wave path:nth-child(2){animation-delay:.15s}#voiceFab .wave path:nth-child(3){animation-delay:.3s}#voiceFab .wave path:nth-child(4){animation-delay:.45s}#voiceFab .wave path:nth-child(5){animation-delay:.6s}
+@keyframes icWave{0%,100%{transform:scaleY(1)}50%{transform:scaleY(.55)}}
+body.aiBusy #voiceFab .wave path{animation-play-state:paused}
+@media(prefers-reduced-motion:reduce){#voiceFab .wave path{animation:none}}
+</style>
+</head>
+<body>
+<div id="app">
+<aside id="side">
+  <div class="brand"><span class="orb"></span>Verity</div>
+  <button id="newChat" class="newChatSide"><span class="newChatPlus">＋</span><span>New chat</span></button>
+  <div class="row"><span data-chat-label="Chats">Chats</span><button id="exportChats" class="ghost">Export chats</button></div>
+  <label class="archiveFilter"><input id="showArchived" type="checkbox"><span>Archived chats</span></label>
+  <div id="chatList"></div>
+  <div class="foot"><button id="theme" class="ghost"></button></div>
+</aside>
+
+<main id="chat">
+  <header class="topbar">
+    <div class="topLeft"><button id="sideToggle" class="ghost" type="button" aria-controls="side" aria-expanded="true">☰</button><select id="uiLang"><option value="en">English</option><option value="ar">العربية</option></select>
+      <button id="libraryToggle" class="ghost" aria-controls="libraryPanel" aria-expanded="false">Library</button><span id="scope" class="pill">Searching all documents</span>
+    </div>
+  </header>
+  <div id="documentActions"><span id="actionDocName"></span><button class="ghost" data-document-action="summarize">Summarize</button><button class="ghost" data-document-action="key">Key points</button><button class="ghost" data-document-action="explain">Explain simply</button></div>
+  <div id="msgs"></div>
+  <div id="suggestBox" role="listbox" hidden></div><form id="form"><input id="q" dir="auto" placeholder="Ask about your documents" autocomplete="off" aria-label="Your question"><select id="voiceLangSelect" aria-label="Voice language"><option value="en-US">EN</option><option value="ar-JO">AR</option></select><button id="dictateMic" type="button" class="mic" aria-label="Dictate question" title="Dictate question"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2.5" width="6" height="11.5" rx="3"/><path d="M18.5 10.5a6.5 6.5 0 0 1-13 0"/><path d="M12 17v4.5"/></svg></button><button id="send" class="go" aria-label="Send" title="Send">&#8593;</button></form>
+</main>
+
+<section id="viewer" hidden>
+  <div class="vbar"><span id="vtitle"></span><button id="tText" class="ghost">Text</button><button id="tOrig" class="ghost">Original</button><button id="vclose" class="ghost" aria-label="Close">Close</button></div>
+  <div class="vbar"><button id="prev" class="ghost" aria-label="Previous page">&lsaquo;</button><span id="pinfo" style="color:var(--mute);font-size:13px"></span><button id="next" class="ghost" aria-label="Next page">&rsaquo;</button></div>
+  <div id="paper"></div>
+  <div id="previewStatus" class="warn" role="status" hidden></div>
+  <iframe id="orig" hidden title="Original document"></iframe>
+</section>
+</div>
+<section id="libraryPanel" hidden role="dialog" aria-label="Your library">
+  <div class="row"><strong>Your library</strong><button id="libraryClose" class="ghost">Close</button></div>
+  <button id="add" class="primary">+ Add documents</button>
+  <input id="file" type="file" multiple accept=".pdf,.docx,.pptx,.xlsx,.txt,.md,.html,.htm,.epub,.png,.jpg,.jpeg" hidden>
+  <div class="row"><span>Your library</span><button id="newf" class="ghost">+ Folder</button></div>
+  <div id="lib"></div>
+</section>
+<div id="voiceDock">
+  <div id="voicePanel" hidden>
+    <div class="voiceHead"><span class="voiceOrb"></span><strong>Verity Voice</strong></div>
+    <div class="voiceStage" aria-hidden="true"><div class="vOrb"><i></i><i></i><i></i></div><div class="vWave" aria-hidden="true"><svg viewBox="0 0 200 100" preserveAspectRatio="none"><defs><linearGradient id="wg1" x1="0" x2=".5" spreadMethod="repeat"><stop offset="0" stop-color="#2F6BFF"/><stop offset=".35" stop-color="#9B5CFF"/><stop offset=".65" stop-color="#FFB547"/><stop offset="1" stop-color="#2F6BFF"/></linearGradient><linearGradient id="wg2" x1="0" x2=".5" spreadMethod="repeat"><stop offset="0" stop-color="#F04FD0"/><stop offset=".5" stop-color="#2FE0FF"/><stop offset="1" stop-color="#F04FD0"/></linearGradient><linearGradient id="wg3" x1="0" x2=".5" spreadMethod="repeat"><stop offset="0" stop-color="#5B8CFF"/><stop offset=".4" stop-color="#C04DFF"/><stop offset=".7" stop-color="#FFB547"/><stop offset="1" stop-color="#5B8CFF"/></linearGradient><linearGradient id="wg4" x1="0" x2=".5" spreadMethod="repeat"><stop offset="0" stop-color="#FFB547"/><stop offset=".5" stop-color="#FFE3AE"/><stop offset="1" stop-color="#FFB547"/></linearGradient></defs><g><path d="M0 50.0L5 52.2L10 54.5L15 56.8L20 59.1L25 61.3L30 63.5L35 65.6L40 67.4L45 69.0L50 70.2L55 70.8L60 70.9L65 70.3L70 69.1L75 67.2L80 64.6L85 61.5L90 57.9L95 54.1L100 50.0L105 45.9L110 42.1L115 38.5L120 35.4L125 32.8L130 30.9L135 29.7L140 29.1L145 29.2L150 29.8L155 31.0L160 32.6L165 34.4L170 36.5L175 38.7L180 40.9L185 43.2L190 45.5L195 47.8L200 50.0L205 52.2L210 54.5L215 56.8L220 59.1L225 61.3L230 63.5L235 65.6L240 67.4L245 69.0L250 70.1L255 70.8L260 70.9L265 70.3L270 69.1L275 67.2L280 64.6L285 61.5L290 57.9L295 54.1L300 50.0L305 45.9L310 42.1L315 38.5L320 35.4L325 32.8L330 30.9L335 29.7L340 29.1L345 29.2L350 29.8L355 31.0L360 32.6L365 34.4L370 36.5L375 38.7L380 40.9L385 43.2L390 45.5L395 47.8L400 50.0" stroke="url(#wg1)" stroke-width="2.6" opacity="0.95"/><path d="M0 65.8L5 66.9L10 67.6L15 67.8L20 67.4L25 66.5L30 65.1L35 63.2L40 61.1L45 58.6L50 56.0L55 53.4L60 50.9L65 48.5L70 46.3L75 44.5L80 42.9L85 41.7L90 40.7L95 40.1L100 39.8L105 39.7L110 39.8L115 40.0L120 40.4L125 40.9L130 41.6L135 42.4L140 43.4L145 44.6L150 45.9L155 47.5L160 49.3L165 51.3L170 53.4L175 55.7L180 58.0L185 60.2L190 62.3L195 64.2L200 65.8L205 66.9L210 67.6L215 67.8L220 67.4L225 66.5L230 65.1L235 63.2L240 61.1L245 58.6L250 56.0L255 53.4L260 50.9L265 48.5L270 46.3L275 44.5L280 42.9L285 41.7L290 40.7L295 40.1L300 39.8L305 39.7L310 39.8L315 40.0L320 40.4L325 40.9L330 41.6L335 42.4L340 43.4L345 44.6L350 45.9L355 47.5L360 49.3L365 51.3L370 53.4L375 55.7L380 58.0L385 60.2L390 62.3L395 64.2L400 65.8" stroke="url(#wg2)" stroke-width="1.6" opacity="0.8"/><path d="M0 66.3L5 62.7L10 59.1L15 55.6L20 52.3L25 49.2L30 46.3L35 43.7L40 41.2L45 39.0L50 37.0L55 35.1L60 33.5L65 32.0L70 30.8L75 29.8L80 29.3L85 29.3L90 29.8L95 31.0L100 32.8L105 35.4L110 38.6L115 42.4L120 46.7L125 51.3L130 56.2L135 61.0L140 65.7L145 69.9L150 73.6L155 76.5L160 78.6L165 79.8L170 80.0L175 79.4L180 77.9L185 75.8L190 73.0L195 69.8L200 66.3L205 62.7L210 59.1L215 55.6L220 52.3L225 49.2L230 46.3L235 43.7L240 41.2L245 39.0L250 37.0L255 35.1L260 33.5L265 32.0L270 30.8L275 29.8L280 29.3L285 29.3L290 29.8L295 31.0L300 32.8L305 35.4L310 38.6L315 42.4L320 46.7L325 51.3L330 56.2L335 61.0L340 65.7L345 69.9L350 73.6L355 76.5L360 78.6L365 79.8L370 80.0L375 79.4L380 77.9L385 75.8L390 73.0L395 69.8L400 66.3" stroke="url(#wg3)" stroke-width="2.0" opacity="0.85"/><path d="M0 46.6L5 45.4L10 44.1L15 42.9L20 41.8L25 40.9L30 40.1L35 39.5L40 39.3L45 39.3L50 39.7L55 40.5L60 41.5L65 42.8L70 44.4L75 46.2L80 48.0L85 49.8L90 51.7L95 53.3L100 54.8L105 56.1L110 57.1L115 57.8L120 58.3L125 58.5L130 58.4L135 58.1L140 57.7L145 57.1L150 56.4L155 55.7L160 54.8L165 54.0L170 53.1L175 52.1L180 51.1L185 50.1L190 49.0L195 47.8L200 46.6L205 45.4L210 44.1L215 42.9L220 41.8L225 40.9L230 40.1L235 39.5L240 39.3L245 39.3L250 39.7L255 40.5L260 41.5L265 42.8L270 44.4L275 46.2L280 48.0L285 49.8L290 51.7L295 53.3L300 54.8L305 56.1L310 57.1L315 57.8L320 58.3L325 58.5L330 58.4L335 58.1L340 57.7L345 57.1L350 56.4L355 55.7L360 54.8L365 54.0L370 53.1L375 52.1L380 51.1L385 50.1L390 49.0L395 47.8L400 46.6" stroke="url(#wg4)" stroke-width="1.2" opacity="0.7"/><path d="M0 28.2L5 28.9L10 30.3L15 32.2L20 34.5L25 37.2L30 40.1L35 43.1L40 46.0L45 48.8L50 51.4L55 53.7L60 55.8L65 57.5L70 58.9L75 60.0L80 60.8L85 61.4L90 61.8L95 62.1L100 62.1L105 62.0L110 61.7L115 61.1L120 60.3L125 59.1L130 57.7L135 55.8L140 53.7L145 51.2L150 48.4L155 45.5L160 42.4L165 39.4L170 36.5L175 33.8L180 31.6L185 29.8L190 28.6L195 28.1L200 28.2L205 28.9L210 30.3L215 32.2L220 34.5L225 37.2L230 40.1L235 43.1L240 46.0L245 48.8L250 51.4L255 53.7L260 55.8L265 57.5L270 58.9L275 60.0L280 60.8L285 61.4L290 61.8L295 62.1L300 62.1L305 62.0L310 61.7L315 61.1L320 60.3L325 59.1L330 57.7L335 55.8L340 53.7L345 51.2L350 48.4L355 45.5L360 42.4L365 39.4L370 36.5L375 33.8L380 31.6L385 29.8L390 28.6L395 28.1L400 28.2" stroke="url(#wg1)" stroke-width="1.4" opacity="0.6"/></g></svg></div></div>
+    <div id="voiceStatus">Ready</div>
+    <div class="voiceLangRow">
+      <button class="voiceLang on" data-lang="en-US">EN</button>
+      <button class="voiceLang" data-lang="ar-JO">AR</button>
+    </div>
+    <div class="voiceHint">Press the orb again to end voice chat.</div>
+  </div>
+  <button id="voiceFab" aria-label="Start voice chat" title="Start voice chat"><svg class="ic wave" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" aria-hidden="true"><path d="M4 10v4"/><path d="M8 6.5v11"/><path d="M12 3.5v17"/><path d="M16 7.5v9"/><path d="M20 10v4"/></svg></button>
+</div>
+
+<dialog id="folderDialog" aria-labelledby="folderDialogTitle" aria-describedby="folderDialogHint">
+  <form id="folderForm" novalidate>
+    <div class="folderModalHead"><span class="folderModalIcon" aria-hidden="true">▣</span><button id="folderCancelX" type="button" class="ghost" aria-label="Close">×</button></div>
+    <h2 id="folderDialogTitle">Create folder</h2>
+    <p id="folderDialogHint">Keep related documents together in your library.</p>
+    <label for="folderName">Folder name</label>
+    <input id="folderName" maxlength="100" dir="auto" autocomplete="off" placeholder="e.g. Policies or Project notes" aria-describedby="folderError">
+    <div id="folderError" role="alert" hidden></div>
+    <div class="folderModalActions"><button id="folderCancel" type="button" class="ghost">Cancel</button><button id="folderCreate" type="submit" class="primary">Create folder</button></div>
+  </form>
+</dialog>
+<div id="toast" hidden></div>
+
+<script>
+const AR = {"Create folder": "إنشاء مجلد", "Keep related documents together in your library.": "اجمع المستندات ذات الصلة في مجلد واحد داخل مكتبتك.", "e.g. Policies or Project notes": "مثلاً: السياسات أو ملاحظات المشروع", "Cancel": "إلغاء", "Creating…": "جارٍ الإنشاء…", "Enter a folder name.": "أدخل اسم المجلد.", "A folder with this name already exists.": "يوجد مجلد بهذا الاسم بالفعل.","Summarize": "تلخيص", "Key points": "النقاط الرئيسية", "Explain simply": "شرح مبسّط", "Select a document first.": "اختر مستنداً أولاً.", "The model returned an empty answer. Check the model in Verity settings and try again.": "أعاد النموذج إجابة فارغة. تحقق من إعدادات النموذج في فيريتي وحاول مجدداً.","Chats": "المحادثات", "Export chats": "تصدير المحادثات", "Archived chats": "المحادثات المؤرشفة", "Library": "المكتبة", "No archived chats.": "لا توجد محادثات مؤرشفة.", "Your conversations will appear here.": "ستظهر محادثاتك هنا.", "Archive chat": "أرشفة المحادثة", "Restore chat": "استعادة المحادثة", "Delete chat": "حذف المحادثة", "Delete this saved chat?": "حذف هذه المحادثة المحفوظة؟", "This response was interrupted.": "انقطعت هذه الإجابة.", "Chat storage is full. Export or remove an old chat to keep saving.": "مساحة حفظ المحادثات ممتلئة. صدّر المحادثات أو احذف محادثة قديمة للاستمرار في الحفظ.","Loading original preview…": "جارٍ تحميل العرض الأصلي…", "Install LibreOffice to view the original Word, PowerPoint, or Excel layout here, then restart Verity.": "ثبّت LibreOffice لعرض التنسيق الأصلي لملفات Word وPowerPoint وExcel هنا، ثم أعد تشغيل فيريتي.", "The original document preview could not be converted. Try again or use Text view.": "تعذر تحويل المستند للعرض الأصلي. حاول مجدداً أو استخدم عرض النص.","Document not found.": "المستند غير موجود.", "No such page.": "الصفحة غير موجودة.", "No readable text found.": "لم يُعثر على نص قابل للقراءة.", "Folder name is required.": "اسم المجلد مطلوب.", "Select some text first.": "حدد نصاً أولاً.", "Unknown Select & Ask action.": "إجراء غير معروف للنص المحدد.", "Folder already exists.": "المجلد موجود مسبقاً.", "Folder not found.": "المجلد غير موجود.", "Cannot delete General.": "لا يمكن حذف المجلد العام.","Page":"صفحة","Slide":"شريحة","New chat": "محادثة جديدة", "+ Add documents": "+ إضافة مستندات", "Your library": "مكتبتك", "+ Folder": "+ مجلد", "Light mode": "الوضع الفاتح", "Dark mode": "الوضع الداكن", "All documents": "كل المستندات", "Favorites": "المفضلة", "General": "عام", "Folder name": "اسم المجلد", "Text": "نص", "Original": "الأصل", "Close": "إغلاق", "Document": "مستند", "Open original": "فتح الملف الأصلي", "Generate FAQs": "إنشاء أسئلة وأجوبة", "Generating FAQs…": "جارٍ إنشاء الأسئلة والأجوبة…", "FAQs use sampled excerpts across this document.": "تستند الأسئلة والأجوبة إلى مقتطفات موزعة عبر هذا المستند.", "Star document": "إضافة إلى المفضلة", "Unstar document": "إزالة من المفضلة", "No favorite documents yet.": "لا توجد مستندات مفضلة بعد.", "Toggle sidebar": "إظهار أو إخفاء الشريط الجانبي", "Interface language": "لغة الواجهة", "Question suggestions": "اقتراحات الأسئلة", "Ask about your documents": "اسأل عن مستنداتك", "Your question": "سؤالك", "Voice language": "لغة الصوت", "Dictate question": "إملاء السؤال", "Send": "إرسال", "Stop generating": "إيقاف الإجابة", "Previous page": "الصفحة السابقة", "Next page": "الصفحة التالية", "Original document": "المستند الأصلي", "Verity Voice": "صوت فيريتي", "Ready": "جاهز", "Press the orb again to end voice chat.": "اضغط على الدائرة مرة أخرى لإنهاء المحادثة الصوتية.", "Start voice chat": "بدء محادثة صوتية", "End voice chat": "إنهاء المحادثة الصوتية", "✨ Explain": "✨ شرح", "Aa Simplify": "تبسيط", "🔗 Find related": "🔗 إيجاد مقاطع ذات صلة", "💬 Ask": "💬 اسأل", "🔊 Listen": "🔊 استمع", "Why this answer?": "لماذا هذه الإجابة؟", "Retrieval inspector": "فاحص الاسترجاع", "Source": "المصدر", "Vec": "متجهي", "BM25": "BM25", "Fuse": "دمج", "Final": "نهائي", "No retrieval trace available.": "لا توجد بيانات استرجاع متاحة.", "Evidence verification": "التحقق من الأدلة", "Check source conflicts": "فحص تعارض المصادر", "Checking…": "جارٍ الفحص…", "No direct contradiction detected in the retrieved sources.": "لم يُكتشف تناقض مباشر في المصادر المسترجعة.", "Sources disagree.": "تختلف المصادر.", "✓ Supported": "✓ مدعوم", "~ Weak": "~ ضعيف", "! Unsupported": "! غير مدعوم", "Found in": "وُجد في", "Generation stopped.": "تم إيقاف الإجابة.", "Explain this selection": "شرح النص المحدد", "Simplify this selection": "تبسيط النص المحدد", "Find related passages": "إيجاد مقاطع ذات صلة", "Working…": "جارٍ العمل…", "Speaking…": "أتحدث…", "Starting…": "جارٍ البدء…", "Thinking…": "أفكر…", "Microphone issue": "مشكلة في الميكروفون", "Listening…": "أستمع…", "Listening… click to stop": "أستمع… اضغط للإيقاف", "Voice chat is not supported by this browser. Try Chrome or Edge.": "المتصفح لا يدعم المحادثة الصوتية. جرّب كروم أو إيدج.", "End Voice Chat first, then use dictation.": "أنه المحادثة الصوتية أولاً ثم استخدم الإملاء.", "Dictation could not start. Check microphone permission.": "تعذر بدء الإملاء. تحقق من إذن الميكروفون.", "Voice chat is not supported by this browser": "المتصفح لا يدعم المحادثة الصوتية", "Voice dictation is not supported by this browser": "المتصفح لا يدعم الإملاء الصوتي", "Cannot reach the Verity server. Is app.py running?": "تعذر الاتصال بخادم فيريتي. هل يعمل app.py؟", "Ready. Ask away.": "جاهز. اطرح سؤالك.", "Searching all documents": "البحث في كل المستندات", "Meet Verity": "تعرّف على فيريتي", "Your private AI document assistant": "مساعدك الخاص الذكي للمستندات", "Talk or type": "تحدث أو اكتب", "Ask normally, or open Voice Chat for a hands-free back-and-forth conversation.": "اكتب سؤالك أو افتح المحادثة الصوتية للتحدث دون استخدام اليدين.", "Many file types": "أنواع ملفات متعددة", "PDF, Word, PowerPoint, Excel, CSV/TSV, text, Markdown, HTML, JSON and image OCR — including Arabic.": "PDF وWord وPowerPoint وExcel وCSV/TSV والنصوص وMarkdown وHTML وJSON والتعرف على نصوص الصور، بما فيها العربية.", "Verify every answer": "تحقق من كل إجابة", "Inspect citations, evidence support and the retrieval path behind an answer.": "افحص الاستشهادات والأدلة ومسار استرجاع الإجابة.", "Private by design": "الخصوصية أساس التصميم", "Your document library, index and local LLM workflow stay on your device.": "تبقى مكتبة المستندات والفهرس والنموذج المحلي على جهازك.", "Choose files": "اختيار الملفات", "Verity is a local AI assistant for your documents. Add files, ask grounded questions, narrow the search to a folder or document, and verify answers against the source.": "فيريتي مساعد محلي ذكي لمستنداتك. أضف الملفات واطرح أسئلة تستند إليها وحدد مجلداً أو مستنداً للبحث وتحقق من الإجابات في المصدر.", "Try: “Summarise this document”, “What changed between these policies?”, or click a folder to search only there.": "جرّب: «لخّص هذا المستند» أو «ما الذي تغير بين هذه السياسات؟»، أو اختر مجلداً للبحث فيه فقط.", "Delete folder (documents move to General)": "حذف المجلد (تُنقل المستندات إلى عام)"};
+Object.assign(AR,{
+  "📄 Export Word":"📄 تصدير إلى Word",
+  "Preparing Word document…":"جارٍ إعداد مستند Word…",
+  "Download Word":"تنزيل ملف Word",
+  "Word document ready.":"مستند Word جاهز.",
+  "Could not create the Word document.":"تعذر إنشاء مستند Word.",
+  "No Arabic speech voice is available in this browser. Install an Arabic Windows voice or use Microsoft Edge.":"لا يتوفر صوت عربي في هذا المتصفح. ثبّت صوتاً عربياً في ويندوز أو استخدم Microsoft Edge.",
+  "Cannot reach the server. Is api.py running?":"تعذر الاتصال بالخادم. هل يعمل api.py؟"
+});
+let uiLang=localStorage.getItem('lumen-ui-lang')==='ar'?'ar':'en';
+function tr(text){return uiLang==='ar'?(AR[text]||text):text}
+function local(en,ar){return uiLang==='ar'?ar:en}
+
+const $=s=>document.querySelector(s);
+const el=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null){e.textContent=x}return e};
+let favoritesOnly=false;
+let lib={folders:[],docs:{}},scope=null,scopeDoc=null,history=[],busy=false,view={},currentController=null,lastAnswerMeta=null,selectedText='',answerCounter=0,voiceChat=false,voiceLang='en-US',isSpeaking=false,voiceRestart=null,dictationMode=false;
+
+/* theme */
+function setTheme(t){document.documentElement.dataset.theme=t;localStorage.setItem('lumen-theme-v2',t);$('#theme').textContent=t==='dark'?tr("Light mode"):tr("Dark mode")}
+setTheme(localStorage.getItem('lumen-theme-v2')||'dark');
+$('#theme').onclick=()=>setTheme(document.documentElement.dataset.theme==='dark'?'light':'dark');
+
+/* api + toast */
+async function api(url,opts){const r=await fetch(url,opts);if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(tr(j.detail||r.statusText))}return r.json()}
+let tt;function toast(m,sticky){const t=$('#toast');t.textContent=m;t.hidden=false;clearTimeout(tt);if(!sticky)tt=setTimeout(()=>t.hidden=true,4500)}
+const post=(u,b,m='POST')=>api(u,{method:m,headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
+
+/* library */
+async function load(){lib=await api('/api/library');if(scopeDoc&&!lib.docs[scopeDoc])scopeDoc=null;updateScopeLabel();renderLib();renderEmpty()}
+function updateScopeLabel(){
+  updateDocumentActions();
+  if(scopeDoc&&lib.docs[scopeDoc]) $('#scope').textContent=local(`Searching only ${lib.docs[scopeDoc].name}`,`البحث فقط في ${lib.docs[scopeDoc].name}`);
+  else if(scope) $('#scope').textContent=local(`Searching in ${scope}`,`البحث في ${scope}`);
+  else $('#scope').textContent=tr("Searching all documents");
+}
+function setScope(f){$('#libraryClose').click();scope=f;scopeDoc=null;updateScopeLabel();renderLib()}
+function setDocScope(id){$('#libraryClose').click();scopeDoc=id;scope=null;updateScopeLabel();renderLib()}
+
+function inferDocumentScope(question){
+  const q=normalizeSearch(question||'');
+  const matches=[];
+  for(const d of Object.values(lib.docs)){
+    const full=normalizeSearch(d.name||'');
+    const stem=full.replace(/\.[^.]+$/,'');
+    if(full&&q.includes(full))matches.push(d.id);
+    else if(stem.length>=3&&q.includes(stem))matches.push(d.id);
+  }
+  return [...new Set(matches)];
+}
+
+function documentFolders(doc){const memberships=Array.isArray(doc.folders)?doc.folders:[];const valid=memberships.filter(f=>typeof f==='string'&&f.trim());return valid.length?valid:[typeof doc.folder==='string'&&doc.folder.trim()?doc.folder:'General']}
+function renderLib(){
+  const box=$('#lib');box.replaceChildren();
+  const all=el('button','item'+(scope===null&&!scopeDoc&&!favoritesOnly?' on':''),tr("All documents"));all.dataset.libraryFilter='all';all.onclick=()=>{favoritesOnly=false;scope=null;scopeDoc=null;updateScopeLabel();renderLib()};box.append(all);
+  const fav=el('button','item'+(favoritesOnly?' on':''),tr('Favorites'));fav.onclick=()=>{favoritesOnly=!favoritesOnly;renderLib()};box.append(fav);
+  if(favoritesOnly&&!Object.values(lib.docs).some(d=>d.starred))box.append(el('div','cnt',tr('No favorite documents yet.')));
+  // Build from canonical memberships too, so older libraries cannot hide files.
+  const folders=[...new Set([...lib.folders,...Object.values(lib.docs).flatMap(documentFolders)])];
+  for(const f of folders){
+    const docs=Object.values(lib.docs).filter(d=>documentFolders(d).includes(f)&&(!favoritesOnly||d.starred));
+    const wrap=el('div','folder'+(scope===f?' on':''));
+    const head=el('div','fhead');
+    const nm=el('button','fname',f==='General'?tr('General'):f);nm.onclick=()=>setScope(f);
+    head.append(nm,el('span','cnt',String(docs.length)));
+    if(f!=='General'){const x=el('button','x','\u00d7');x.title=tr("Delete folder (documents move to General)");x.setAttribute('aria-label',local('Delete folder '+f,'حذف المجلد '+f));
+      x.onclick=async()=>{if(confirm(local(`Delete folder "${f}"? Its documents move to General.`,`حذف المجلد «${f}»؟ تُنقل مستنداته إلى عام.`))){if(scope===f)setScope(null);lib=await api('/api/folders/'+encodeURIComponent(f),{method:'DELETE'});await load()}};head.append(x)}
+    wrap.append(head);
+    wrap.ondragover=e=>{e.preventDefault();wrap.classList.add('over')};
+    wrap.ondragleave=()=>wrap.classList.remove('over');
+    wrap.ondrop=async e=>{e.preventDefault();e.stopPropagation();wrap.classList.remove('over');
+      const id=e.dataTransfer.getData('text/doc');
+      if(id){await post('/api/docs/'+id,{folder:f},'PATCH');await load()}
+      else if(e.dataTransfer.files.length)upload(e.dataTransfer.files,f)};
+    for(const d of docs){
+      const r=el('div','doc'+(scopeDoc===d.id?' on':''));r.dataset.docId=d.id;r.draggable=true;r.ondragstart=e=>e.dataTransfer.setData('text/doc',d.id);
+      const b=el('button','nm',d.name);b.title=local(`Open ${d.name} (${d.pages} pages)`,`فتح ${d.name} (${d.pages} صفحات)`);b.onclick=()=>openDoc(d.id);
+      const s=el('button','scopeDoc','⌕');s.title=local(`Search only ${d.name}`,`البحث فقط في ${d.name}`);s.setAttribute('aria-label',local('Search only '+d.name,'البحث فقط في '+d.name));
+      s.onclick=e=>{e.stopPropagation();setDocScope(d.id)};
+      const x=el('button','x','\u00d7');x.setAttribute('aria-label',local('Remove '+d.name,'إزالة '+d.name));
+      x.onclick=async()=>{if(confirm(local(`Remove "${d.name}" from Verity?`,`إزالة «${d.name}» من فيريتي؟`))){if(scopeDoc===d.id){scopeDoc=null;updateScopeLabel()}await api('/api/docs/'+d.id,{method:'DELETE'});await load()}};
+      const star=el('button','star',d.starred?'★':'☆');star.title=tr(d.starred?'Unstar document':'Star document');star.setAttribute('aria-label',star.title+' '+d.name);star.setAttribute('aria-pressed',String(!!d.starred));star.onclick=async()=>{star.disabled=true;try{await post('/api/docs/'+d.id,{starred:!d.starred},'PATCH');await load()}catch(e){toast(e.message)}finally{star.disabled=false}};
+      r.append(b,star,s,el('span','cnt',local(d.pages+' pages',d.pages+' صفحات')),x);wrap.append(r)}
+    box.append(wrap)}
+}
+$('#add').onclick=()=>$('#file').click();
+$('#file').onchange=e=>{if(e.target.files.length)upload(e.target.files);e.target.value=''};
+let creatingFolder=false;
+function folderError(message){$('#folderError').textContent=message;$('#folderError').hidden=!message;$('#folderName').setAttribute('aria-invalid',String(!!message))}
+$('#newf').onclick=()=>{
+  $('#folderName').value='';folderError('');$('#folderDialog').showModal();$('#folderName').focus();
+};
+function closeFolderDialog(){if(!creatingFolder)$('#folderDialog').close()}
+$('#folderCancel').onclick=closeFolderDialog;$('#folderCancelX').onclick=closeFolderDialog;
+$('#folderDialog').addEventListener('cancel',e=>{if(creatingFolder)e.preventDefault()});
+$('#folderDialog').addEventListener('close',()=>$('#newf').focus());
+$('#folderName').addEventListener('input',()=>folderError(''));
+$('#folderForm').onsubmit=async e=>{
+  e.preventDefault();if(creatingFolder)return;const name=$('#folderName').value.trim();
+  if(!name){folderError(tr('Enter a folder name.'));$('#folderName').focus();return}
+  const folders=new Set([...lib.folders,...Object.values(lib.docs).flatMap(documentFolders)]);
+  if(folders.has(name)){folderError(tr('A folder with this name already exists.'));$('#folderName').focus();return}
+  creatingFolder=true;folderError('');$('#folderCreate').disabled=true;$('#folderCreate').textContent=tr('Creating…');$('#folderCancel').disabled=true;$('#folderCancelX').disabled=true;
+  try{await post('/api/folders',{name});favoritesOnly=false;await load();$('#folderDialog').close()}
+  catch(error){folderError(error.message)}
+  finally{creatingFolder=false;$('#folderCreate').disabled=false;$('#folderCreate').textContent=tr('Create folder');$('#folderCancel').disabled=false;$('#folderCancelX').disabled=false}
+};
+
+async function upload(files,folder){
+  const fd=new FormData();[...files].forEach(f=>fd.append('files',f));fd.append('folder',folder||scope||'General');
+  toast(local(`Reading ${files.length} files. Larger files take a minute.`,`جارٍ قراءة ${files.length} ملفات. قد تستغرق الملفات الكبيرة دقيقة.`),true);
+  try{const res=await api('/api/upload',{method:'POST',body:fd});const bad=res.filter(r=>!r.ok);
+    const reused=res.filter(r=>r.ok&&r.doc?.reused_existing);
+    if(bad.length)toast(bad.map(b=>`${b.name}: ${b.error}`).join('\n'));
+    else if(reused.length){favoritesOnly=false;$('#libraryPanel').hidden=false;$('#libraryToggle').setAttribute('aria-expanded','true');toast(reused.length===1?local(`Already indexed — added the existing document to ${reused[0].doc.added_to_folder}.`,`مفهرس مسبقاً — أُضيف المستند الموجود إلى ${reused[0].doc.added_to_folder}.`):local(`${reused.length} existing documents were reused.`,`أُعيد استخدام ${reused.length} مستندات موجودة دون فهرستها مجدداً.`));}
+    else toast(tr("Ready. Ask away."))}catch(e){toast(e.message)}
+  await load()}
+['dragover','drop'].forEach(ev=>$('#chat').addEventListener(ev,e=>{e.preventDefault();if(ev==='drop'&&e.dataTransfer.files.length)upload(e.dataTransfer.files)}));
+
+/* empty state */
+function renderEmpty(){
+  const m=$('#msgs');if(history.length||m.querySelector('.m'))return;
+  m.replaceChildren();
+
+  const n=Object.keys(lib.docs).length;
+  const e=el('div','heroGlow');e.id='empty';
+
+  const title=el('h1',null,n?tr("Meet Verity"):tr("Your private AI document assistant"));
+  if(title.textContent.includes('Verity')){const [x,y]=title.textContent.split('Verity');title.replaceChildren(x,el('em',null,'Verity'),y)}
+  const intro=el(
+    'p',
+    'intro',
+    n
+      ? local(`Verity can chat naturally, answer questions from your ${n} documents, search a specific folder or file, and show the exact source behind each answer.`,`يمكن لفيريتي إجراء محادثة والإجابة من مستنداتك البالغ عددها ${n} والبحث في مجلد أو ملف محدد وإظهار مصدر كل إجابة.`)
+      : tr("Verity is a local AI assistant for your documents. Add files, ask grounded questions, narrow the search to a folder or document, and verify answers against the source.")
+  );
+
+  const caps=el('div','caps');
+  const items=[
+    [tr("Talk or type"),tr("Ask normally, or open Voice Chat for a hands-free back-and-forth conversation.")],
+    [tr("Many file types"),tr("PDF, Word, PowerPoint, Excel, CSV/TSV, text, Markdown, HTML, JSON and image OCR — including Arabic.")],
+    [tr("Verify every answer"),tr("Inspect citations, evidence support and the retrieval path behind an answer.")],
+    [tr("Private by design"),tr("Your document library, index and local LLM workflow stay on your device.")]
+  ];
+  items.forEach(([a,b])=>{
+    const c=el('div','cap');
+    c.append(el('strong',null,a),el('span',null,b));
+    caps.append(c);
+  });
+
+  e.append(title,intro,caps);
+
+  if(!n){
+    const b=el('button','primary',tr("Choose files"));
+    b.style.padding='0 28px';
+    b.onclick=()=>$('#add').click();
+    const d=el('div','drop');
+    d.append(b);
+    e.append(d);
+  }else{
+    e.append(el('p',null,tr("Try: “Summarise this document”, “What changed between these policies?”, or click a folder to search only there.")));
+  }
+
+  m.append(e);
+}
+
+/* chat/session controls */
+function setPipeline(){/* hidden */}
+
+async function newChat(){
+  await finishActiveRequest();saveCurrentChat();activeChatId=null;storeChats();renderSavedChats();
+  if(typeof stopVoiceChat==='function')stopVoiceChat();
+  if(currentController)currentController.abort();
+  history=[];
+  lastAnswerMeta=null;
+  selectedText='';
+  $('#msgs').replaceChildren();
+  $('#viewer').hidden=true;
+  $('#app').classList.remove('split');
+  setScope(null);
+  renderEmpty();
+  setPipeline(tr("Ready"),false);
+  $('#q').value='';
+  $('#q').focus();
+}
+$('#newChat').onclick=newChat;
+
+/* speech output (voice chat + Listen button): the server's TTS, Agent/voice.py */
+let speakToken=0,player=null;
+function stopSpeaking(){
+  speakToken++;
+  if(player){try{player.pause()}catch{}player=null}
+  isSpeaking=false;
+}
+async function speakText(text,onDone){
+  stopSpeaking();
+  const my=speakToken;
+  if(!text){onDone?.();return}
+  isSpeaking=true;
+  const finish=()=>{if(my!==speakToken)return;isSpeaking=false;player=null;onDone?.()};
+  try{
+    const r=await fetch('/api/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})});
+    if(my!==speakToken)return;
+    if(!r.ok||r.status===204){finish();return}
+    const url=URL.createObjectURL(await r.blob());
+    if(my!==speakToken){URL.revokeObjectURL(url);return}
+    player=new Audio(url);
+    player.onended=player.onerror=()=>{URL.revokeObjectURL(url);finish()};
+    await player.play();
+  }catch{finish()}
+}
+/* answer trust + feedback */
+function renderVerification(items){
+  const wrap=el('div','badges');
+  (items||[]).forEach(v=>{
+    const cls=v.status==='supported'?'good':v.status==='weak'?'weak':'bad';
+    const label=v.status==='supported'?tr("✓ Supported"):v.status==='weak'?tr("~ Weak"):tr("! Unsupported");
+    const b=el('span','badge '+cls,label);
+    b.title=v.sentence;
+    wrap.append(b);
+  });
+  return wrap;
+}
+
+function addAnswerTools(bub,meta){
+  bub._answerMeta=meta;
+  if(bub._chatRecord){bub._chatRecord.meta=meta;saveCurrentChat()}
+  const bar=el('div','answerTools');
+  const listen=el('button','mini',tr("🔊 Listen"));
+  const why=el('button','mini',tr("Why this answer?"));
+  listen.onclick=()=>speakText(meta.answer);
+
+  const panel=el('div','trustPanel');
+  panel.hidden=true;
+  why.onclick=()=>{panel.hidden=!panel.hidden;if(!panel.hidden)panel.scrollIntoView({block:'nearest',behavior:'smooth'})};
+
+  bar.append(listen,why);
+  bub.append(bar,panel);
+
+  const q=meta.searchQuery||meta.question;
+  panel.append(el('strong',null,tr("Retrieval inspector")));
+  panel.append(el('div',null,local(`Search query: ${q}`,`استعلام البحث: ${q}`)));
+
+  const srcRows=meta.sources||[];
+  if(srcRows.length){
+    const table=el('table','traceTable');
+    const head=document.createElement('tr');
+    ['#',tr("Source"),local('Section','القسم')].forEach(x=>head.append(el('th',null,x)));
+    table.append(head);
+    srcRows.forEach(s=>{
+      const row=document.createElement('tr');
+      [s.n,`${s.file}, ${tr('Page')} ${s.page}`,s.section||'—'].forEach(x=>{const td=el('td',null,String(x));td.dir='auto';row.append(td)});
+      table.append(row);
+    });
+    panel.append(table);
+  }else panel.append(el('div',null,tr("No retrieval trace available.")));
+
+  if(meta.verification?.length){
+    panel.append(el('div',null,tr("Evidence verification")));
+    panel.append(renderVerification(meta.verification));
+  }
+}
+
+/* chat */
+function msg(cls,text){$('#empty')?.remove();const d=el('div','m '+cls,text);d._chatRecord={role:cls==='user'?'user':'assistant',text:cls==='user'?text:'',pending:cls!=='user'};$('#msgs').append(d);d.scrollIntoView({block:'end'});saveCurrentChat();return d}
+function setBusy(v){
+  busy=v;
+  updateDocumentActions();
+  const b=$('#send');
+  if(v){b.classList.add('stop');b.innerHTML='&#9632;';b.title=tr("Stop generating");b.setAttribute('aria-label',tr("Stop generating"))}
+  else{b.classList.remove('stop');b.innerHTML='&#8593;';b.title=tr("Send");b.setAttribute('aria-label',tr("Send"))}
+}
+function stopGeneration(){
+  if(currentController)currentController.abort();
+}
+$('#form').onsubmit=e=>{
+  e.preventDefault();
+  if(busy){stopGeneration();return}
+  hideSuggestions();
+  const q=$('#q').value.trim();
+  if(q){$('#q').value='';ask(q)}
+};
+function paint(b,text,src,q,final){
+  text=normalizeCitations(text);
+  if(b._chatRecord){Object.assign(b._chatRecord,{text,sources:src,question:q,pending:!final});if(final)saveCurrentChat()}
+  b.classList.remove('typing');b.replaceChildren();const t=text.trim();
+  if(!final&&t.length<9&&'NOT_FOUND'.startsWith(t)){b.classList.add('typing');return}
+  const notFound=t.startsWith('NOT_FOUND')||t.startsWith("I couldn't find that in the documents you've provided.")||t.startsWith("I couldn't find that in your documents.")||t.startsWith('\u0644\u0645 \u0623\u062c\u062f \u0647\u0630\u0647 \u0627\u0644\u0645\u0639\u0644\u0648\u0645\u0629');
+  if(notFound){const ar=uiLang==='ar';
+    b.append(el('div','warn',ar?'\u0644\u0645 \u0623\u062c\u062f \u0647\u0630\u0647 \u0627\u0644\u0645\u0639\u0644\u0648\u0645\u0629 \u0641\u064a \u0627\u0644\u0645\u0633\u062a\u0646\u062f\u0627\u062a \u0627\u0644\u062a\u064a \u0632\u0648\u062f\u062a\u0646\u064a \u0628\u0647\u0627.':"I couldn't find that in your documents. Try rephrasing, or add the file that covers it."));return}
+  const cited=new Set();
+  t.split(/(\[\d+\])/).forEach(p=>{const m=p.match(/^\[(\d+)\]$/);
+    if(m&&src[m[1]-1]){cited.add(+m[1]);const c=el('button','cite',m[1]);c.onclick=()=>openSrc(src[m[1]-1]);b.append(c)}else b.append(p)});
+  if(!final)b.classList.add('typing');
+  if(final&&src.length){const f=el('div','found',tr("Found in"));
+    (cited.size?[...cited]:[1]).forEach(n=>{const s=src[n-1];if(!s)return;const x=el('button','src');x.append(el('bdi',null,s.file),document.createTextNode(`${uiLang==='ar'?'،':','} ${tr('Page')} ${s.page}`));x.onclick=()=>openSrc(s);f.append(x)});b.append(f)}}
+async function ask(q,opts={}){
+  if(busy)return;
+  hideSuggestions();
+  const chosen=selectedSuggestion?.text===q?selectedSuggestion:null;selectedSuggestion=null;
+  const autoDocIds=opts.docIds||chosen?.docIds||(scopeDoc?[]:inferDocumentScope(q));
+  if(!scopeDoc&&autoDocIds.length){
+    const names=autoDocIds.map(id=>lib.docs[id]?.name).filter(Boolean);
+    if(names.length)$('#scope').textContent=local(`Searching only ${names.join(', ')}`,`البحث فقط في ${names.join('، ')}`);
+  }
+  currentController=new AbortController();setBusy(true);setPipeline('Searching…',true);
+  msg('user',q);const bub=msg('bot','');bub.classList.add('typing');let text='',src=[],trace=[],verification=[],searchQuery=q,mode='documents',stopped=false;
+  try{
+    const r=await fetch('/api/chat',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({question:q,folders:scope?[scope]:[],doc_ids:opts.docIds||chosen?.docIds||(scopeDoc?[scopeDoc]:autoDocIds),history,language:/[\u0600-\u06FF]/.test(q)?'ar':(/[A-Za-z]/.test(q)?'en':uiLang)}),
+      signal:currentController.signal
+    });
+    const rd=r.body.getReader(),dec=new TextDecoder();let buf='';
+    for(;;){const {done,value}=await rd.read();if(done)break;buf+=dec.decode(value,{stream:true});let i;
+      while((i=buf.indexOf('\n'))>=0){const l=buf.slice(0,i);buf=buf.slice(i+1);if(!l.trim())continue;const ev=JSON.parse(l);
+        if(ev.type==='sources'){src=ev.sources;setPipeline('Evidence found',true)}
+        else if(ev.type==='trace'){trace=ev.trace||[];searchQuery=ev.query||q;setPipeline('Hybrid retrieval ✓',true)}
+        else if(ev.type==='verification'){verification=ev.items||[];setPipeline('Evidence verified ✓',true)}
+        else if(ev.type==='not_found'){
+          src=[];
+          text=ev.text||"I couldn't find that in your documents.";
+          paint(bub,text,src,q,false);
+          $('#msgs').scrollTop=1e9;
+        }
+        else if(ev.type==='scope'){
+          if(ev.scope==='documents'&&ev.doc_ids?.length){
+            const names=ev.doc_ids.map(id=>lib.docs[id]?.name).filter(Boolean);
+            if(names.length)$('#scope').textContent=local(`Searching only ${names.join(', ')}`,`البحث فقط في ${names.join('، ')}`);
+          }else if(ev.scope==='folders'&&ev.folders?.length)$('#scope').textContent=local(`Searching in ${ev.folders.join(', ')}`,`البحث في ${ev.folders.join('، ')}`);
+          else if(ev.scope==='all')updateScopeLabel();
+        }
+        else if(ev.type==='token'){text+=ev.text;paint(bub,text,src,q,false);$('#msgs').scrollTop=1e9}
+        else if(ev.type==='done'){mode=ev.mode||mode;setPipeline(mode==='documents'?'Grounded answer ✓':'Chat response ✓',false)}
+        else if(ev.type==='error')text='NOTE: '+ev.text}}
+  }catch(e){
+    if(e.name==='AbortError')stopped=true;
+    else text='NOTE: '+e.message
+  }finally{
+    currentController=null;setBusy(false);
+    if(stopped)setPipeline('Stopped',false);
+  }
+  if(stopped){
+    bub.classList.remove('typing');
+    if(text)paint(bub,text,src,q,true);
+    else bub.replaceChildren(el('div','warn',tr("Generation stopped.")));
+  }else if(text.startsWith('NOTE: ')){
+    bub.classList.remove('typing');bub.replaceChildren(el('div','warn',text.slice(6)))
+  }else paint(bub,text,src,q,true);
+  if(!stopped||text){
+    const nf=text.trim().startsWith('NOT_FOUND')||text.startsWith("I couldn't find that in the documents you've provided.")||text.startsWith("I couldn't find that in your documents.")||text.startsWith('\u0644\u0645 \u0623\u062c\u062f \u0647\u0630\u0647 \u0627\u0644\u0645\u0639\u0644\u0648\u0645\u0629');
+    history.push({role:'user',content:q},{role:'assistant',content:nf?"I couldn't find that in the documents.":text});
+    if(!nf && text && !text.startsWith('NOTE: ')){
+      answerCounter++;
+      lastAnswerMeta={answerId:`answer-${answerCounter}-${Date.now()}`,question:q,answer:text,sources:src,trace,verification,searchQuery,mode};
+      addAnswerTools(bub,lastAnswerMeta);
+    }
+  }
+  if(opts.voice&&voiceChat){
+    setVoiceStatus(tr("Speaking…"));
+    speakText(text.startsWith('NOTE: ')?'':text,()=>startVoiceListening(650));
+  }
+  if(bub._chatRecord?.pending){bub._chatRecord.text=bub.textContent;bub._chatRecord.pending=false}
+  saveCurrentChat();
+}
+
+/* split-screen viewer */
+
+/* The extracted text is for reading/searching, not for reproducing PDF layout.
+   Some PDFs store every word as a separate positioned object, which can make
+   extracted text appear vertically. Clean only the DISPLAY copy here; the
+   indexed/source text and character offsets remain untouched. */
+function readableText(s){
+  if(!s)return '';
+
+  let x=s.replace(/\r/g,'');
+
+  // Preserve likely paragraph breaks, but turn single line breaks into spaces.
+  x=x.replace(/\n[ \t]*\n+/g,'\n\n');
+  x=x.replace(/(?<![.!?:;\u061f])\n(?=\S)/g,' ');
+  x=x.replace(/[ \t]{2,}/g,' ');
+
+  // If a PDF extraction produced lots of one-word lines, collapse those too.
+  const lines=x.split('\n');
+  const nonempty=lines.filter(v=>v.trim());
+  const short=nonempty.filter(v=>v.trim().split(/\s+/).length<=3);
+  if(nonempty.length>=8 && short.length/nonempty.length>.65){
+    x=x.replace(/\s+/g,' ');
+  }
+
+  return x.trim();
+}
+
+function openSrc(s){
+  if(matchMedia('(max-width:900px)').matches)setSidebar(true);
+  view={
+    doc_id:s.doc_id,
+    page:s.page,
+    src:s.page,
+    hl:s.end>s.start?[s.start,s.end]:null,
+    quote:s.quote||'',
+    mode:'text'
+  };
+  showViewer();updateDocumentActions()
+}
+function openDoc(id){$('#libraryClose').click();if(matchMedia('(max-width:900px)').matches)setSidebar(true);view={doc_id:id,page:1,src:0,hl:null,quote:'',mode:'text'};showViewer();updateDocumentActions()}
+let viewerRequest=0;
+async function showViewer(){
+  const requestId=++viewerRequest;const requested={...view};
+  $('#app').classList.add('split');$('#viewer').hidden=false;
+
+  const d=lib.docs[view.doc_id];
+  $('#vtitle').textContent=d?d.name:tr("Document");
+
+  const pdf=/\.pdf$/i.test(d?.name||'')||String(d?.ext||'').toLowerCase()==='.pdf';
+  const slide=/\.pptx$/i.test(d?.name||'');
+  $('#paper').classList.toggle('slide',slide);
+  $('#paper').dir='auto';
+
+  // "Original" = the uploaded file itself, which the browser can only show for PDFs and images.
+  const showable=pdf||/\.(png|jpe?g)$/i.test(d?.name||'');
+  $('#tOrig').hidden=!showable;
+  if(!showable)view.mode='text';
+
+  $('#paper').hidden=view.mode!=='text';
+  $('#orig').hidden=view.mode!=='orig';
+  $('#previewStatus').hidden=true;
+
+  try{
+    const p=await api(`/api/doc/${view.doc_id}/page/${view.page}`);
+    if(requestId!==viewerRequest||view.doc_id!==requested.doc_id||view.page!==requested.page)return;
+    view.total=p.total;
+    $('#pinfo').textContent=`${tr(d?.ext==='.pptx'?'Slide':'Page')} ${view.page} / ${p.total}`;
+
+    const box=$('#paper');
+    box.replaceChildren();
+
+    if(view.hl&&view.page===view.src){
+      const [a,b]=view.hl;
+
+      // Clean each region separately so highlighting remains attached to the
+      // same evidence sentence even if the PDF's extracted whitespace is odd.
+      const before=slide?p.text.slice(0,a):readableText(p.text.slice(0,a));
+      const answer=slide?p.text.slice(a,b):readableText(p.text.slice(a,b));
+      const after=slide?p.text.slice(b):readableText(p.text.slice(b));
+
+      if(before)box.append(before+' ');
+      const m=el('mark',null,answer||p.text.slice(a,b));
+      box.append(m);
+      if(after)box.append(' '+after);
+
+      setTimeout(()=>m.scrollIntoView({block:'center',behavior:'smooth'}),60);
+    }else{
+      if(slide){const lines=p.text.split('\n');if(/^Slide \d+$/.test(lines[0]))lines.shift();const heading=el('strong','slideHeading',lines.shift()||'');heading.dir='auto';box.append(heading,document.createTextNode(lines.join('\n')))}else box.textContent=readableText(p.text);
+    }
+
+    if(view.mode==='orig')$('#orig').src=`/api/doc/${view.doc_id}/file`+(pdf?`#page=${view.page}`:'');
+
+  }catch(e){
+    toast(e.message)
+  }
+}
+$('#prev').onclick=()=>{if(view.page>1){view.page--;showViewer()}};
+$('#next').onclick=()=>{if(view.page<view.total){view.page++;showViewer()}};
+$('#tText').onclick=()=>{view.mode='text';view.page=Math.min(view.page,lib.docs[view.doc_id]?.pages||view.page);showViewer()};
+$('#tOrig').onclick=()=>{view.mode='orig';showViewer()};
+$('#vclose').onclick=()=>{$('#viewer').hidden=true;$('#app').classList.remove('split');updateDocumentActions()};
+
+/* Voice: the browser records the mic, the server transcribes it (/api/stt, faster-whisper) and speaks
+   answers (/api/tts). A recording ends after ~1.2 s of silence once speech was heard. */
+const canRecord=!!(navigator.mediaDevices?.getUserMedia&&window.MediaRecorder);
+let rec=null;   // the running recording: rec.stop(send)
+
+function setVoiceStatus(text){$('#voiceStatus').textContent=text;const k=Object.keys(AR).find(x=>AR[x]===text)||text;$('#voiceDock').dataset.state=/Listen|أستمع/.test(k)?'listening':/Think/.test(k)?'thinking':/Speak|Start/.test(k)?'speaking':'idle'}
+function setVoiceActive(on){
+  voiceChat=on;
+  $('#voicePanel').hidden=!on;
+  $('#voiceFab').classList.toggle('active',on);
+  $('#voiceFab').innerHTML=on?'<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="6.5" y="6.5" width="11" height="11" rx="3" fill="currentColor"/></svg>':'<svg class="ic wave" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" aria-hidden="true"><path d="M4 10v4"/><path d="M8 6.5v11"/><path d="M12 3.5v17"/><path d="M16 7.5v9"/><path d="M20 10v4"/></svg>';
+  $('#voiceFab').title=on?tr("End voice chat"):tr("Start voice chat");
+}
+/* Record one utterance -> Blob, or null when nothing was said / it was cancelled. */
+async function recordOnce(){
+  const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
+  const ctx=new (window.AudioContext||window.webkitAudioContext)();
+  const an=ctx.createAnalyser();an.fftSize=1024;ctx.createMediaStreamSource(stream).connect(an);
+  const data=new Uint8Array(an.fftSize),parts=[],mr=new MediaRecorder(stream);
+  mr.ondataavailable=e=>{if(e.data.size)parts.push(e.data)};
+  return new Promise(resolve=>{
+    let heard=false,quietSince=0,cancelled=false,timer=0;const started=performance.now();
+    mr.onstop=()=>{clearInterval(timer);stream.getTracks().forEach(t=>t.stop());ctx.close().catch(()=>{});
+      resolve(cancelled||!heard?null:new Blob(parts,{type:mr.mimeType||'audio/webm'}))};
+    rec={stop(send=true){cancelled=!send;if(mr.state!=='inactive')mr.stop()}};
+    mr.start(250);
+    timer=setInterval(()=>{
+      an.getByteTimeDomainData(data);let sum=0;for(const v of data){const x=(v-128)/128;sum+=x*x}
+      const now=performance.now();
+      if(Math.sqrt(sum/data.length)>0.02){heard=true;quietSince=0}
+      else if(heard){quietSince=quietSince||now;if(now-quietSince>1200)rec.stop(true)}
+      if(now-started>30000||(!heard&&now-started>12000))rec.stop(true);
+    },100);
+  });
+}
+async function transcribeBlob(blob){
+  const fd=new FormData();fd.append('audio',blob,'speech.webm');fd.append('language',voiceLang.slice(0,2));
+  const r=await api('/api/stt',{method:'POST',body:fd});
+  return (r.text||'').trim();
+}
+function startVoiceListening(delay=250){
+  clearTimeout(voiceRestart);
+  if(!voiceChat||busy||isSpeaking)return;
+  voiceRestart=setTimeout(async()=>{
+    if(!voiceChat||busy||isSpeaking||rec)return;
+    setVoiceStatus(voiceLang.startsWith('ar')?'أستمع…':tr("Listening…"));
+    let blob=null;
+    try{blob=await recordOnce()}
+    catch{rec=null;setVoiceStatus(tr("Microphone issue"));toast(tr("Dictation could not start. Check microphone permission."));return}
+    rec=null;
+    if(!voiceChat)return;
+    if(!blob){startVoiceListening(300);return}
+    setVoiceStatus(tr("Thinking…"));
+    let q='';
+    try{q=await transcribeBlob(blob)}catch(e){toast(e.message)}
+    if(!voiceChat)return;
+    if(!q){startVoiceListening(300);return}
+    ask(q,{voice:true});
+  },delay);
+}
+function stopVoiceChat(){
+  clearTimeout(voiceRestart);
+  voiceChat=false;
+  stopSpeaking();
+  rec?.stop(false);
+  setVoiceActive(false);
+  setVoiceStatus(tr("Ready"));
+}
+function greet(){
+  rec?.stop(false);
+  setVoiceStatus(tr("Starting…"));
+  speakText(voiceLang.startsWith('ar')?'مرحباً، كيف يمكنني مساعدتك اليوم؟':'Hey, how can I help you today?',()=>startVoiceListening(400));
+}
+function startVoiceChat(){
+  if(!canRecord){toast(tr("Voice chat is not supported by this browser. Try Chrome or Edge."));return}
+  setVoiceActive(true);
+  greet();
+}
+$('#voiceFab').onclick=()=>voiceChat?stopVoiceChat():startVoiceChat();
+$('#voiceLangSelect').onchange=()=>{
+  voiceLang=$('#voiceLangSelect').value;
+  document.querySelectorAll('.voiceLang').forEach(x=>x.classList.toggle('on',x.dataset.lang===voiceLang));
+  if(voiceChat)greet();
+};
+document.querySelectorAll('.voiceLang').forEach(b=>{
+  b.onclick=()=>{
+    voiceLang=b.dataset.lang;
+    $('#voiceLangSelect').value=voiceLang;
+    document.querySelectorAll('.voiceLang').forEach(x=>x.classList.toggle('on',x===b));
+    if(voiceChat)greet();
+  };
+});
+/* One-shot dictation in the chat input: fills the box, does not send. */
+function setDictating(on,title){
+  dictationMode=on;
+  $('#dictateMic').classList.toggle('listening',on);
+  $('#dictateMic').title=tr(title);
+}
+$('#dictateMic').onclick=async()=>{
+  if(voiceChat){toast(tr("End Voice Chat first, then use dictation."));return}
+  if(dictationMode){rec?.stop(true);return}
+  voiceLang=$('#voiceLangSelect').value;
+  setDictating(true,"Listening… click to stop");
+  let blob=null;
+  try{blob=await recordOnce()}catch{toast(tr("Dictation could not start. Check microphone permission."))}
+  rec=null;
+  if(blob){
+    $('#dictateMic').title=tr("Working…");
+    try{const t=await transcribeBlob(blob);if(t){$('#q').value=t;$('#q').focus()}}catch(e){toast(e.message)}
+  }
+  setDictating(false,"Dictate question");
+};
+if(!canRecord){
+  $('#voiceFab').disabled=true;
+  $('#voiceFab').title=tr("Voice chat is not supported by this browser");
+  $('#dictateMic').disabled=true;
+  $('#dictateMic').title=tr("Voice dictation is not supported by this browser");
+}
+let lastAppliedLang=null;
+function applyLanguage(){
+  const changingLanguage=lastAppliedLang!==null&&lastAppliedLang!==uiLang;
+  if(changingLanguage)favoritesOnly=false;
+  if(lastAppliedLang!==uiLang){voiceLang=uiLang==='ar'?'ar-JO':'en-US';$('#voiceLangSelect').value=voiceLang;document.querySelectorAll('.voiceLang').forEach(b=>b.classList.toggle('on',b.dataset.lang===voiceLang));lastAppliedLang=uiLang}
+  document.documentElement.lang=uiLang;
+  document.documentElement.dir=uiLang==='ar'?'rtl':'ltr';
+  $('#uiLang').value=uiLang;
+  const reverse=Object.fromEntries(Object.entries(AR).map(([en,ar])=>[ar,en]));
+  const translateNode=node=>{
+    if(node.nodeType===Node.TEXT_NODE){
+      const key=node._labelKey||reverse[node.textContent]||node.textContent;
+      if(AR[key]){node._labelKey=key;node.textContent=tr(key)}
+    }else if(node.nodeType===Node.ELEMENT_NODE){
+      for(const attr of ['title','aria-label','placeholder']){
+        const value=node.getAttribute(attr);if(!value)continue;
+        const key=node.dataset['label'+attr.replace(/-/g,'')]||reverse[value]||value;
+        if(AR[key]){node.dataset['label'+attr.replace(/-/g,'')]=key;node.setAttribute(attr,tr(key))}
+      }
+      node.childNodes.forEach(translateNode);
+    }
+  };
+  ['#side .brand','#newChat','#add','#side .row','.archiveFilter','#exportChats','#libraryPanel>.row','#libraryPanel #add','#libraryPanel>.row','#folderDialog','#documentActions','#theme','.topbar','#form','.vbar','#orig','#voiceDock','#selectMenu','.answerTools','.trustPanel','.found'].forEach(sel=>document.querySelectorAll(sel).forEach(translateNode));
+  $('#sideToggle').title=tr('Toggle sidebar');$('#sideToggle').setAttribute('aria-label',tr('Toggle sidebar'));
+  $('#uiLang').setAttribute('aria-label',tr('Interface language'));
+  $('#suggestBox').setAttribute('aria-label',tr('Question suggestions'));
+  $('#q').setAttribute('role','combobox');$('#q').setAttribute('aria-autocomplete','list');$('#q').setAttribute('aria-controls','suggestBox');
+  document.querySelectorAll('.bot').forEach(bub=>{if(bub._answerMeta){const expanded=!bub.querySelector('.trustPanel')?.hidden;bub.querySelectorAll('.answerTools,.trustPanel').forEach(x=>x.remove());addAnswerTools(bub,bub._answerMeta);if(expanded)bub.querySelector('.trustPanel').hidden=false}});
+  renderSavedChats();
+  updateScopeLabel();renderLib();renderEmpty();setTheme(document.documentElement.dataset.theme);updateSuggestions();
+  if(view.doc_id&&!$('#viewer').hidden)showViewer();
+}
+$('#uiLang').onchange=()=>{uiLang=$('#uiLang').value;localStorage.setItem('lumen-ui-lang',uiLang);applyLanguage()};
+function setSidebar(collapsed){
+  $('#app').classList.toggle('collapsed',collapsed);
+  $('#sideToggle').setAttribute('aria-expanded',String(!collapsed));
+  $('#side').inert=collapsed;
+  localStorage.setItem('lumen-sidebar-collapsed',String(collapsed));
+}
+$('#sideToggle').onclick=()=>setSidebar(!$('#app').classList.contains('collapsed'));
+matchMedia('(max-width:900px)').addEventListener('change',e=>{if(e.matches)setSidebar(true)});
+// A visible close control also makes the mobile overlay easy to dismiss.
+const sideClose=el('button','ghost','☰');sideClose.type='button';sideClose.title=tr('Toggle sidebar');sideClose.onclick=()=>setSidebar(true);$('#side .brand').append(sideClose);
+setSidebar(localStorage.getItem('lumen-sidebar-collapsed')==='true'||(matchMedia('(max-width:900px)').matches&&localStorage.getItem('lumen-sidebar-collapsed')===null));
+
+let suggestions=[],suggestionIndex=-1,selectedSuggestion=null;
+function hideSuggestions(){ $('#suggestBox').hidden=true;$('#q').setAttribute('aria-expanded','false');$('#q').removeAttribute('aria-activedescendant');suggestionIndex=-1 }
+function updateSuggestions(){
+  const query=normalizeSearch($('#q').value.trim());
+  if(!query||busy){hideSuggestions();return}
+  const docs=Object.values(lib.docs).filter(d=>scopeDoc?d.id===scopeDoc:!scope||(d.folders||[d.folder]).includes(scope));
+  const candidates=[];
+  for(const d of docs){
+    const actions=uiLang==='ar'?[`لخّص ${d.name}`,`ما النقاط الرئيسية في ${d.name}؟`,`اشرح ${d.name} ببساطة`]:[`Summarize ${d.name}`,`What are the key points in ${d.name}?`,`Explain ${d.name} in simple terms`];
+    for(const text of actions)candidates.push({text,docId:d.id,docIds:[d.id]});
+  }
+  if(docs.length>1){const names=docs.slice(0,2).map(d=>d.name);candidates.push({text:local(`Compare ${names.join(' and ')}`,`قارن بين ${names.join(' و ')}`),docIds:docs.slice(0,2).map(d=>d.id)})}
+  const words=query.split(/\s+/);
+  suggestions=candidates.map(c=>({...c,score:words.reduce((n,w)=>n+(normalizeSearch(c.text).includes(w)?1:0),0)})).filter(c=>c.score).sort((a,b)=>b.score-a.score).slice(0,7);
+  const box=$('#suggestBox');box.replaceChildren();suggestionIndex=-1;
+  suggestions.forEach((c,i)=>{const b=el('button',null,c.text);b.type='button';b.id='suggestion-'+i;b.setAttribute('role','option');b.setAttribute('aria-selected','false');b.onmousedown=e=>e.preventDefault();b.onclick=()=>chooseSuggestion(i);box.append(b)});
+  box.hidden=!suggestions.length;$('#q').setAttribute('aria-expanded',String(!!suggestions.length));
+}
+function chooseSuggestion(i){const c=suggestions[i];if(!c)return;selectedSuggestion=c;$('#q').value=c.text;hideSuggestions();$('#q').focus()}
+$('#q').addEventListener('input',()=>{selectedSuggestion=null;updateSuggestions()});
+$('#q').addEventListener('focus',updateSuggestions);
+$('#q').addEventListener('keydown',e=>{
+  if(e.key==='Escape'){hideSuggestions();return}
+  if($('#suggestBox').hidden)return;
+  if(e.key==='ArrowDown'||e.key==='ArrowUp'){
+    e.preventDefault();suggestionIndex=(suggestionIndex+(e.key==='ArrowDown'?1:-1)+suggestions.length)%suggestions.length;
+    [...$('#suggestBox').children].forEach((b,i)=>b.setAttribute('aria-selected',String(i===suggestionIndex)));
+    $('#q').setAttribute('aria-activedescendant','suggestion-'+suggestionIndex);
+  }else if((e.key==='Enter'||e.key==='Tab')&&suggestionIndex>=0){e.preventDefault();chooseSuggestion(suggestionIndex)}
+});
+document.addEventListener('mousedown',e=>{if(!e.target.closest('#suggestBox')&&e.target.id!=='q')hideSuggestions()});
+function normalizeSearch(text){return String(text).normalize('NFKC').toLocaleLowerCase().replace(/[\u0610-\u061a\u064b-\u065f\u0670\u06d6-\u06ed\u0640]/g,'').replace(/[أإآٱ]/g,'ا').replace(/ى/g,'ي')}
+function normalizeCitations(text){return String(text).replace(/\[([0-9٠-٩۰-۹]+)\]/g,(_,digits)=>'['+[...digits].map(c=>{const n=c.charCodeAt(0);return n>=0x660&&n<=0x669?n-0x660:n>=0x6f0&&n<=0x6f9?n-0x6f0:c}).join('')+']')}
+function selectedDocument(){return scopeDoc||(view.doc_id&&!$('#viewer').hidden?view.doc_id:null)}
+function updateDocumentActions(){const id=selectedDocument();const selected=lib.docs[id];$('#documentActions').hidden=false;$('#actionDocName').textContent=selected?.name||tr('Select a document first.');document.querySelectorAll('[data-document-action]').forEach(b=>b.disabled=busy||!selected)}
+$('#documentActions').onclick=e=>{
+  const action=e.target.closest('[data-document-action]')?.dataset.documentAction;
+  if(!action||busy)return;const id=selectedDocument();if(!lib.docs[id]){toast(tr('Select a document first.'));return}
+  const name=lib.docs[id].name;
+  const prompts={summarize:local(`Summarize ${name}`,`لخّص ${name}`),key:local(`What are the key points in ${name}?`,`ما النقاط الرئيسية في ${name}؟`),explain:local(`Explain ${name} in simple terms`,`اشرح ${name} ببساطة`)};
+  if(prompts[action])ask(prompts[action],{docIds:[id]});
+};
+
+/* Saved chats stay in this browser's local storage; document files stay on disk. */
+let savedChats=[],activeChatId=null,restoringChat=false;
+try{
+  const stored=JSON.parse(localStorage.getItem('lumen-chats-v1')||'{}');
+  savedChats=Array.isArray(stored.chats)?stored.chats.filter(c=>c&&typeof c.id==='string'&&Array.isArray(c.messages)):[];
+  activeChatId=stored.activeId||null;
+}catch{}
+function storeChats(){
+  try{localStorage.setItem('lumen-chats-v1',JSON.stringify({activeId:activeChatId,chats:savedChats}))}
+  catch{toast(tr('Chat storage is full. Export or remove an old chat to keep saving.'))}
+}
+function saveCurrentChat(){
+  if(restoringChat)return;
+  const messages=[...document.querySelectorAll('#msgs .m')].map(node=>{
+    const record=node._chatRecord||{role:node.classList.contains('user')?'user':'assistant',text:node.textContent};
+    return record;
+  });
+  if(!messages.length)return;
+  if(!activeChatId)activeChatId=window.crypto?.randomUUID?.()||'chat-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2);
+  const previous=savedChats.find(c=>c.id===activeChatId);
+  const first=messages.find(m=>m.role==='user');
+  const chat={id:activeChatId,title:previous?.title||(first?.text||tr('New chat')).slice(0,70),updatedAt:Date.now(),messages,history:[...history],scope,scopeDoc,archived:previous?.archived||false};
+  savedChats=savedChats.filter(c=>c.id!==activeChatId);savedChats.unshift(chat);
+  storeChats();renderSavedChats();
+}
+function renderSavedChats(){
+  const box=$('#chatList');box.replaceChildren();
+  const archived=$('#showArchived').checked;
+  const chats=savedChats.filter(c=>!!c.archived===archived).sort((a,b)=>b.updatedAt-a.updatedAt);
+  if(!chats.length)box.append(el('div','chatEmpty',tr(archived?'No archived chats.':'Your conversations will appear here.')));
+  for(const chat of chats){
+    const row=el('div','savedChat'+(chat.id===activeChatId?' active':''));
+    const open=el('button','chatTitle',chat.title);open.type='button';open.dir='auto';open.title=chat.title;open.onclick=()=>openSavedChat(chat.id);
+    const archive=el('button','chatAction',chat.archived?'↩':'▣');archive.type='button';archive.title=tr(chat.archived?'Restore chat':'Archive chat');archive.setAttribute('aria-label',archive.title);archive.onclick=()=>{saveCurrentChat();const target=savedChats.find(c=>c.id===chat.id);target.archived=!target.archived;storeChats();renderSavedChats()};
+    const remove=el('button','chatAction','×');remove.type='button';remove.title=tr('Delete chat');remove.setAttribute('aria-label',remove.title);remove.onclick=async()=>{if(!confirm(tr('Delete this saved chat?')))return;if(chat.id===activeChatId){await finishActiveRequest();activeChatId=null;history=[];$('#msgs').replaceChildren();renderEmpty()}savedChats=savedChats.filter(c=>c.id!==chat.id);storeChats();renderSavedChats()};
+    row.append(open,archive,remove);box.append(row);
+  }
+}
+async function finishActiveRequest(){
+  if(busy)stopGeneration();
+  while(busy)await new Promise(resolve=>setTimeout(resolve,30));
+}
+async function openSavedChat(id){
+  await finishActiveRequest();stopVoiceChat();saveCurrentChat();
+  const chat=savedChats.find(c=>c.id===id);if(!chat)return;
+  activeChatId=id;restoringChat=true;history=Array.isArray(chat.history)?[...chat.history]:[];
+  scope=lib.folders.includes(chat.scope)?chat.scope:null;scopeDoc=lib.docs[chat.scopeDoc]?chat.scopeDoc:null;
+  $('#msgs').replaceChildren();$('#viewer').hidden=true;$('#app').classList.remove('split');
+  for(const record of chat.messages){
+    const node=el('div','m '+(record.role==='user'?'user':'bot'));node._chatRecord=record;
+    $('#msgs').append(node);
+    if(record.role==='user')node.textContent=record.text||'';
+    else if(record.pending)node.textContent=(record.text||'')+'\n'+tr('This response was interrupted.');
+    else{paint(node,record.text||'',record.sources||[],record.question||'',true);if(record.meta)addAnswerTools(node,record.meta);if(record.faq)node.append(el('div','warn',tr('FAQs use sampled excerpts across this document.')))}
+  }
+  restoringChat=false;storeChats();renderSavedChats();updateScopeLabel();renderLib();hideSuggestions();$('#q').value='';
+  if(matchMedia('(max-width:900px)').matches)setSidebar(true);
+}
+$('#showArchived').onchange=renderSavedChats;
+$('#exportChats').onclick=()=>{
+  saveCurrentChat();const blob=new Blob([JSON.stringify({chats:savedChats},null,2)],{type:'application/json'});
+  const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='lumen-chats.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+};
+$('#libraryToggle').onclick=()=>{
+  const panel=$('#libraryPanel');panel.hidden=!panel.hidden;$('#libraryToggle').setAttribute('aria-expanded',String(!panel.hidden));
+  if(!panel.hidden&&matchMedia('(max-width:900px)').matches)setSidebar(true);
+};
+$('#libraryClose').onclick=()=>{$('#libraryPanel').hidden=true;$('#libraryToggle').setAttribute('aria-expanded','false')};
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('#folderDialog').open)$('#libraryClose').click()});
+window.addEventListener('pagehide',saveCurrentChat);
+
+applyLanguage();
+
+load().then(()=>{if(activeChatId&&savedChats.some(c=>c.id===activeChatId))return openSavedChat(activeChatId)}).catch(()=>toast(tr("Cannot reach the server. Is api.py running?")));
+</script>
+<script>
+/* =================== VERITY "WOW 2" — visual effects only =================== */
+(()=>{
+const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+const AR_UI=()=>document.documentElement.lang==='ar'||document.documentElement.dir==='rtl'||(typeof uiLang!=='undefined'&&uiLang==='ar');
+
+/* ---- 1. cinematic intro (once per browser session) ---- */
+let seen=false;try{seen=sessionStorage.getItem('verity-intro')==='1'}catch{}
+if(!seen&&!reduce){
+  const i=document.createElement('div');i.id='intro';
+  i.innerHTML='<div class="iOrb"></div><div class="iName">Verity</div><div class="iTag"></div>';
+  i.querySelector('.iTag').textContent='Answers you can prove';i.dir='ltr';
+  const done=()=>i.remove();
+  i.addEventListener('animationend',e=>{if(e.animationName==='introOut')done()});
+  i.onclick=done;
+  document.body.append(i);
+  try{sessionStorage.setItem('verity-intro','1')}catch{}
+}
+
+/* ---- 2. cursor glow + spotlight on cards ---- */
+if(!reduce){
+  const g=document.createElement('div');g.id='cursorGlow';document.body.append(g);
+  let x=innerWidth/2,y=innerHeight/2,tx=x,ty=y,raf=0;
+  const loop=()=>{x+=(tx-x)*.12;y+=(ty-y)*.12;g.style.transform=`translate(${x}px,${y}px)`;raf=(Math.abs(tx-x)+Math.abs(ty-y)>.5)?requestAnimationFrame(loop):0};
+  addEventListener('pointermove',e=>{tx=e.clientX;ty=e.clientY;if(!raf)raf=requestAnimationFrame(loop);
+    const c=e.target.closest?.('.cap,.src,.newChatSide');
+    if(c){const r=c.getBoundingClientRect();c.style.setProperty('--mx',(e.clientX-r.left)+'px');c.style.setProperty('--my',(e.clientY-r.top)+'px')}
+  },{passive:true});
+}
+
+/* ---- 3. live "thinking" steps, driven by the real answer pipeline ---- */
+const STEPS={
+  'Searching…':['Searching your documents…','أبحث في مستنداتك…'],
+  'Evidence found':['Found the evidence…','وجدتُ الدليل…'],
+  'Hybrid retrieval ✓':['Ranking the best passages…','أرتّب أفضل المقاطع…'],
+  'Evidence verified ✓':['Checking the facts…','أتحقق من المعلومات…']
+};
+const DEFAULT=['Thinking…','أفكر…'];
+let step=DEFAULT;
+const stepText=()=>step[AR_UI()?1:0];
+const oldPipe=typeof setPipeline==='function'?setPipeline:()=>{};
+setPipeline=function(label,active){
+  try{oldPipe.apply(this,arguments)}catch{}
+  if(active===false){step=DEFAULT;return}
+  if(STEPS[label])step=STEPS[label];
+  document.querySelectorAll('.thinking .tText').forEach(t=>{if(t.textContent!==stepText()){t.textContent=stepText();t.classList.remove('swap');void t.offsetWidth;t.classList.add('swap')}});
+};
+function addThinking(b){
+  if(b.childNodes.length)return;
+  const w=document.createElement('div');w.className='thinking';
+  const o=document.createElement('span');o.className='tOrb';
+  const t=document.createElement('span');t.className='tText';t.textContent=stepText();
+  w.append(o,t);b.append(w);
+}
+const msgs=document.getElementById('msgs');
+if(msgs){
+  new MutationObserver(muts=>{
+    for(const m of muts){
+      if(m.type==='attributes'){
+        const b=m.target;
+        if(b.classList?.contains('bot')){
+          if(b.classList.contains('typing'))addThinking(b);
+          else if((m.oldValue||'').includes('typing')){b.classList.remove('revealed');void b.offsetWidth;b.classList.add('revealed');setTimeout(()=>b.classList.remove('revealed'),1400)}
+        }
+      }else{
+        if(m.target.classList?.contains('bot')&&m.target.classList.contains('typing'))addThinking(m.target);
+        m.addedNodes.forEach(n=>{if(n.nodeType===1&&n.id==='empty')mountOrb(n)});
+      }
+    }
+  }).observe(msgs,{subtree:true,childList:true,attributes:true,attributeFilter:['class'],attributeOldValue:true});
+}
+
+/* ---- 4. living particle orb on the home screen ---- */
+let orbState={speed:1};
+function mountOrb(empty){
+  if(empty.querySelector('.heroOrb'))return;
+  const cv=document.createElement('canvas');cv.className='heroOrb';cv.setAttribute('aria-hidden','true');
+  empty.prepend(cv);empty.classList.add('hasOrb');
+  const S=250,dpr=Math.min(Math.max(devicePixelRatio||1,1)*1.6,3.2);cv.width=S*dpr;cv.height=S*dpr;
+  const ctx=cv.getContext('2d');ctx.scale(dpr,dpr);
+  const sprite=(rgb)=>{const c=document.createElement('canvas');c.width=c.height=64;const x=c.getContext('2d');const g=x.createRadialGradient(32,32,0,32,32,32);g.addColorStop(0,`rgba(${rgb},1)`);g.addColorStop(.22,`rgba(${rgb},1)`);g.addColorStop(.32,`rgba(${rgb},.35)`);g.addColorStop(.6,`rgba(${rgb},.08)`);g.addColorStop(1,`rgba(${rgb},0)`);x.fillStyle=g;x.fillRect(0,0,64,64);return c};
+  const pal=[sprite('70,120,255'),sprite('47,224,255'),sprite('140,90,255'),sprite('240,79,208'),sprite('255,190,90'),sprite('255,255,255')];
+  const N=2600,pts=[],ga=Math.PI*(3-Math.sqrt(5));
+  for(let i=0;i<N;i++){const y=1-2*(i+.5)/N,r=Math.sqrt(1-y*y),th=ga*i;
+    const lon=Math.atan2(Math.sin(th)*r,Math.cos(th)*r);
+    const mix=(Math.sin(lon*2+y*3)+1)/2;
+    const col=Math.random()<.03?4:Math.random()<.015?5:(y>.35?(mix>.5?1:0):y<-.35?(mix>.5?3:2):(mix>.6?2:mix>.3?0:3));
+    pts.push({x:Math.cos(th)*r,y,z:Math.sin(th)*r,col,ph:Math.random()*6.28,s:.6+Math.random()*.9})}
+  const ring=[];for(let i=0;i<420;i++)ring.push({a:i/240*6.283,j:Math.random(),ph:Math.random()*6.28});
+  let rotY=0,tiltX=-.25,tTilt=-.25,tRot=0,drag=null,last=performance.now(),t=0;
+  cv.addEventListener('pointerdown',e=>{drag={x:e.clientX,y:e.clientY};cv.setPointerCapture(e.pointerId)});
+  cv.addEventListener('pointermove',e=>{if(!drag)return;tRot+=(e.clientX-drag.x)*.01;tTilt=Math.max(-1,Math.min(1,tTilt+(e.clientY-drag.y)*.006));drag={x:e.clientX,y:e.clientY}});
+  cv.addEventListener('pointerup',()=>drag=null);
+  addEventListener('pointermove',e=>{if(drag)return;const r=cv.getBoundingClientRect();const dy=(e.clientY-(r.top+r.height/2))/innerHeight;tTilt=-.25+dy*.6},{passive:true});
+  const R=74,cx=S/2,cy=S/2,F=380;
+  function frame(now){
+    if(!cv.isConnected)return;
+    const dt=Math.min(.05,(now-last)/1000);last=now;
+    const busyNow=typeof busy!=='undefined'&&busy;
+    const sp=busyNow?3.2:1;orbState.speed+=(sp-orbState.speed)*.05;
+    t+=dt*orbState.speed;rotY+=dt*.35*orbState.speed+(tRot*.1);tRot*=.9;tiltX+=(tTilt-tiltX)*.06;
+    ctx.clearRect(0,0,S,S);
+    /* core glow */
+    const cg=ctx.createRadialGradient(cx,cy,0,cx,cy,R*1.35);
+    cg.addColorStop(0,'rgba(60,110,255,.5)');cg.addColorStop(.45,'rgba(90,60,255,.2)');cg.addColorStop(1,'rgba(20,30,120,0)');
+    ctx.fillStyle=cg;ctx.fillRect(0,0,S,S);
+    const bg=ctx.createRadialGradient(cx-R*.3,cy-R*.35,R*.05,cx,cy,R*1.02);
+    bg.addColorStop(0,'rgba(170,200,255,.55)');bg.addColorStop(.35,'rgba(60,90,255,.42)');bg.addColorStop(.75,'rgba(110,50,230,.38)');bg.addColorStop(.95,'rgba(240,79,208,.30)');bg.addColorStop(1,'rgba(240,79,208,0)');
+    ctx.fillStyle=bg;ctx.beginPath();ctx.arc(cx,cy,R*1.02,0,6.2832);ctx.fill();
+    const sw=ctx.createConicGradient?ctx.createConicGradient(t*.8,cx,cy):null;
+    if(sw){sw.addColorStop(0,'rgba(47,224,255,.0)');sw.addColorStop(.25,'rgba(47,224,255,.28)');sw.addColorStop(.5,'rgba(240,79,208,.0)');sw.addColorStop(.75,'rgba(240,79,208,.26)');sw.addColorStop(1,'rgba(47,224,255,.0)');ctx.fillStyle=sw;ctx.beginPath();ctx.arc(cx,cy,R*.92,0,6.2832);ctx.fill()}
+    ctx.globalCompositeOperation='lighter';
+    const cy_=Math.cos(rotY),sy=Math.sin(rotY),cx_=Math.cos(tiltX),sx=Math.sin(tiltX);
+    const amp=.05+.05*(orbState.speed-1)/2.2;
+    for(const p of pts){
+      const wob=1+amp*Math.sin(p.y*5+t*2.2+p.ph*.3)+.03*Math.sin(t*3+p.ph);
+      let x=p.x*wob,y=p.y*wob,z=p.z*wob;
+      let x1=x*cy_-z*sy,z1=x*sy+z*cy_;
+      let y1=y*cx_-z1*sx,z2=y*sx+z1*cx_;
+      const k=F/(F+z2*R);
+      const px=cx+x1*R*k,py=cy+y1*R*k;
+      const depth=(1-z2)/2;
+      const tw=.65+.35*Math.sin(t*3+p.ph);
+      const sz=(1.25+p.s*1.75)*k*(.5+depth*.7);
+      ctx.globalAlpha=Math.min(1,(.1+depth*.9)*tw);
+      ctx.drawImage(pal[p.col],px-sz,py-sz,sz*2,sz*2);
+    }
+    /* electric ring */
+    const rt=t*.6;
+    for(const q of ring){
+      const a=q.a+rt,rr=R*1.32*(1+.025*Math.sin(q.a*9+t*4+q.ph));
+      let x=Math.cos(a)*rr,z=Math.sin(a)*rr,y=Math.sin(a*3+t)*2;
+      const ti=.42+tiltX*.4;const y1=y*Math.cos(ti)-z*Math.sin(ti),z1=y*Math.sin(ti)+z*Math.cos(ti);
+      const k=F/(F+z1);const front=z1<0;
+      ctx.globalAlpha=(front?.85:.25)*(.6+.4*Math.sin(t*5+q.ph));
+      const sz=(front?2.8:1.8)*k;
+      ctx.drawImage(pal[q.j<.12?5:q.j<.3?0:1],cx+x*k-sz,cy+y1*k-sz,sz*2,sz*2);
+    }
+    ctx.globalAlpha=1;ctx.globalCompositeOperation='source-over';
+    if(!reduce)requestAnimationFrame(frame);
+  }
+  if(reduce)frame(performance.now());else requestAnimationFrame(frame);
+}
+const e0=document.getElementById('empty');if(e0)mountOrb(e0);
+})();
+</script>
+<script>
+/* =================== VERITY "WOW 3" — signature features =================== */
+(()=>{
+const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+const isAR=()=>typeof uiLang!=='undefined'&&uiLang==='ar';
+const L=(en,ar)=>isAR()?ar:en;
+const mk=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e};
+const NS='http://www.w3.org/2000/svg';
+const sv=(t,a)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);return e};
+
+/* ========== 1. PROOF BEAM: citation -> evidence sentence ========== */
+let beamFrom=null,beamAt=0;
+document.addEventListener('click',e=>{const c=e.target.closest?.('#msgs .cite, #msgs .src');if(c){beamFrom=c;beamAt=performance.now()}},true);
+const paper=document.getElementById('paper');
+if(paper)new MutationObserver(()=>{
+  const m=paper.querySelector('mark');
+  if(!m||!beamFrom||performance.now()-beamAt>5000)return;
+  const from=beamFrom;beamFrom=null;
+  setTimeout(()=>fireBeam(from,m),reduce?0:720);
+}).observe(paper,{childList:true});
+function fireBeam(from,mark){
+  if(!from.isConnected||!mark.isConnected)return;
+  const a=from.getBoundingClientRect(),b=mark.getBoundingClientRect();
+  if(!a.width||!b.width||b.top>innerHeight||b.bottom<0){mark.classList.add('ignite');return}
+  mark.classList.remove('ignite');void mark.offsetWidth;
+  if(reduce){mark.classList.add('ignite');return}
+  const x0=a.left+a.width/2,y0=a.top+a.height/2;
+  const rtl=document.documentElement.dir==='rtl';
+  const x1=rtl?b.right-6:b.left+6,y1=b.top+Math.min(b.height,26)/2;
+  const lift=Math.min(220,Math.abs(x1-x0)*.35+60);
+  const d=`M${x0} ${y0} C ${x0+(x1-x0)*.25} ${y0-lift}, ${x0+(x1-x0)*.75} ${y1-lift}, ${x1} ${y1}`;
+  const svg=sv('svg',{id:'beamLayer'});
+  const defs=sv('defs');
+  const gr=sv('linearGradient',{id:'beamGrad',gradientUnits:'userSpaceOnUse',x1:x0,y1:y0,x2:x1,y2:y1});
+  [['0','#2FE0FF'],['.45','#7B4DFF'],['.8','#F04FD0'],['1','#FFB547']].forEach(([o,c])=>gr.append(sv('stop',{offset:o,'stop-color':c})));
+  const bl=sv('filter',{id:'beamBlur',x:'-50%',y:'-50%',width:'200%',height:'200%'});bl.append(sv('feGaussianBlur',{stdDeviation:'6'}));
+  defs.append(gr,bl);svg.append(defs);
+  const glow=sv('path',{d,fill:'none',stroke:'url(#beamGrad)','stroke-width':'12','stroke-linecap':'round',opacity:'.55',filter:'url(#beamBlur)'});
+  const core=sv('path',{d,fill:'none',stroke:'url(#beamGrad)','stroke-width':'2.6','stroke-linecap':'round'});
+  const white=sv('path',{d,fill:'none',stroke:'#fff','stroke-width':'1','stroke-linecap':'round',opacity:'.8'});
+  const head=sv('circle',{r:'6',fill:'#fff',filter:'url(#beamBlur)'});const head2=sv('circle',{r:'3.2',fill:'#fff'});
+  const burst=sv('circle',{cx:x1,cy:y1,r:'4',fill:'none',stroke:'#FFB547','stroke-width':'2',opacity:'0'});
+  const start=sv('circle',{cx:x0,cy:y0,r:'5',fill:'none',stroke:'#2FE0FF','stroke-width':'2'});
+  svg.append(glow,core,white,head,head2,burst,start);document.body.append(svg);
+  const len=core.getTotalLength();
+  [glow,core,white].forEach(p=>{p.style.strokeDasharray=len;p.style.strokeDashoffset=len});
+  const T=700,F=650,t0=performance.now();let lit=false;
+  const ease=t=>1-Math.pow(1-t,3);
+  (function step(now){
+    const t=Math.min(1,(now-t0)/T),e=ease(t);
+    [glow,core,white].forEach(p=>p.style.strokeDashoffset=len*(1-e));
+    const pt=core.getPointAtLength(len*e);
+    [head,head2].forEach(h=>{h.setAttribute('cx',pt.x);h.setAttribute('cy',pt.y)});
+    start.setAttribute('r',5+t*18);start.setAttribute('opacity',String(1-t));
+    if(t>=1&&!lit){lit=true;mark.classList.add('ignite')}
+    if(t>=1){
+      const f=Math.min(1,(now-t0-T)/F);
+      burst.setAttribute('r',4+f*46);burst.setAttribute('opacity',String((1-f)*.9));
+      svg.style.opacity=String(1-f);[head,head2].forEach(h=>h.setAttribute('opacity',String(1-f)));
+      if(f>=1){svg.remove();return}
+    }
+    requestAnimationFrame(step);
+  })(t0);
+}
+
+/* ========== 2. TRUTH SCORE ring on every grounded answer ========== */
+const baseTools=addAnswerTools;
+addAnswerTools=function(bub,meta){
+  const r=baseTools.apply(this,arguments);
+  try{addTruth(bub,meta)}catch(e){console.warn(e)}
+  return r;
+};
+function addTruth(bub,meta){
+  const v=meta?.verification||[];if(!v.length)return;
+  const bar=bub.querySelector('.answerTools');if(!bar||bar.querySelector('.truth'))return;
+  const good=v.filter(x=>x.status==='supported').length,weak=v.filter(x=>x.status==='weak').length;
+  const score=Math.round((good+weak*.5)/v.length*100);
+  const tc=score>=75?'#3BE0A0':score>=45?'#FFB547':'#FF5A7A';
+  const b=mk('button','truth');b.type='button';b.style.setProperty('--tc',tc);
+  const svg=sv('svg',{viewBox:'0 0 28 28'});
+  svg.append(sv('circle',{class:'bg',cx:14,cy:14,r:11}));const fg=sv('circle',{class:'fg',cx:14,cy:14,r:11});svg.append(fg);
+  const num=mk('span','num','0%'),lbl=mk('span','lbl',L(score>=75?'Strong proof':score>=45?'Partial proof':'Weak proof',score>=75?'دليل قوي':score>=45?'دليل جزئي':'دليل ضعيف'));
+  b.append(svg,num,lbl);
+  b.title=L(`${good} of ${v.length} answer sentences are fully backed by your documents${weak?`, ${weak} partly`:''}. Click for details.`,`${good} من ${v.length} جمل مدعومة بالكامل من مستنداتك${weak?`، و${weak} جزئياً`:''}. اضغط للتفاصيل.`);
+  b.setAttribute('aria-label',b.title);
+  b.onclick=()=>{const why=[...bar.querySelectorAll('button.mini')].find(x=>x.textContent===tr("Why this answer?"));why?.click()};
+  bar.prepend(b);
+  const target=69.1*(1-score/100);
+  if(reduce){fg.style.strokeDashoffset=target;num.textContent=score+'%';return}
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{fg.style.strokeDashoffset=target}));
+  const t0=performance.now();(function c(now){const t=Math.min(1,(now-t0)/1400),e=1-Math.pow(1-t,3);num.textContent=Math.round(score*e)+'%';if(t<1)requestAnimationFrame(c)})(t0);
+}
+
+/* ========== 3. VOICE ORB follows your real voice ========== */
+const VOICE_METER=true;   /* set to false if voice chat ever has microphone trouble */
+const dock=document.getElementById('voiceDock'),vpanel=document.getElementById('voicePanel');
+if(dock&&vpanel){
+  const meter=mk('div','vMeter');for(let i=0;i<7;i++)meter.append(mk('span'));meter.setAttribute('aria-hidden','true');
+  document.getElementById('voiceStatus')?.before(meter);
+  let mic=null,lvl=0,raf=0;
+  async function micOn(){
+    if(!VOICE_METER||mic||!navigator.mediaDevices?.getUserMedia)return;
+    try{
+      const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
+      const ctx=new (window.AudioContext||window.webkitAudioContext)();
+      const an=ctx.createAnalyser();an.fftSize=512;an.smoothingTimeConstant=.6;
+      ctx.createMediaStreamSource(stream).connect(an);
+      mic={stream,ctx,an,data:new Uint8Array(an.fftSize)};
+      if(vpanel.hidden)micOff();
+    }catch(e){mic=null}
+  }
+  function micOff(){if(!mic)return;try{mic.stream.getTracks().forEach(t=>t.stop());mic.ctx.close()}catch{}mic=null}
+  function loop(now){
+    const st=dock.dataset.state||'idle';let target=0;
+    if(st==='listening'&&mic){
+      mic.an.getByteTimeDomainData(mic.data);let sum=0;for(const v of mic.data){const x=(v-128)/128;sum+=x*x}
+      target=Math.min(1,Math.sqrt(sum/mic.data.length)*5.5);
+    }else if(st==='speaking'){const t=now/1000;target=Math.max(0,.28+.32*Math.sin(t*11)*Math.sin(t*3.1)+.12*Math.sin(t*23))}
+    else if(st==='thinking'){target=.12+.08*Math.sin(now/180)}
+    lvl+=(target-lvl)*(target>lvl?.45:.15);
+    dock.style.setProperty('--lvl',lvl.toFixed(3));
+    raf=vpanel.hidden?0:requestAnimationFrame(loop);
+    if(!raf)dock.style.setProperty('--lvl','0');
+  }
+  new MutationObserver(()=>{
+    if(!vpanel.hidden){micOn();if(!raf&&!reduce)raf=requestAnimationFrame(loop)}else micOff();
+  }).observe(vpanel,{attributes:true,attributeFilter:['hidden']});
+}
+
+/* ========== 4. DOCUMENT SCANNER while files upload ========== */
+const baseUpload=upload;
+upload=async function(files,folder){
+  const list=[...files];const card=showScan(list);
+  document.body.classList.add('scanning');
+  let ok=true;
+  try{return await baseUpload.apply(this,arguments)}catch(e){ok=false;throw e}
+  finally{
+    document.body.classList.remove('scanning');
+    const t=document.getElementById('toast');const failed=!ok||(t&&!t.hidden&&/:/.test(t.textContent)&&!/Ready|جاهز/.test(t.textContent));
+    finishScan(card,!failed);
+  }
+};
+function showScan(list){
+  document.getElementById('scanCard')?.remove();
+  const c=mk('div');c.id='scanCard';c.setAttribute('role','status');
+  const docEl=mk('div','scanDoc');for(let i=0;i<6;i++)docEl.append(mk('i'));
+  const info=mk('div','scanInfo');
+  const title=mk('div','scanTitle',L(list.length===1?'Reading your document':`Reading ${list.length} documents`,list.length===1?'أقرأ مستندك':`أقرأ ${list.length} مستندات`));
+  const names=list.slice(0,2).map(f=>f.name).join(' · ')+(list.length>2?` · +${list.length-2}`:'');
+  const files=mk('div','scanFiles',names);
+  const phase=mk('div','scanPhase');const pt=mk('span','tText');const tm=mk('span','scanTime','0s');phase.append(pt,tm);
+  const bar=mk('div','scanBar');bar.append(mk('b'));
+  info.append(title,files,phase,bar);c.append(docEl,info);document.body.append(c);
+  const P=[['Extracting the text…','أستخرج النص…'],['Splitting into passages…','أقسّمه إلى مقاطع…'],['Building the search index…','أبني فهرس البحث…']];
+  let i=0;pt.textContent=L(...P[0]);const t0=Date.now();
+  c._timer=setInterval(()=>{const s=Math.floor((Date.now()-t0)/1000);tm.textContent=s+'s';const ni=Math.min(P.length-1,Math.floor(s/3));if(ni!==i){i=ni;pt.textContent=L(...P[i]);pt.classList.remove('swap');void pt.offsetWidth;pt.classList.add('swap')}},250);
+  c._title=title;c._phase=pt;return c;
+}
+function finishScan(c,good){
+  if(!c)return;clearInterval(c._timer);
+  if(good){const t=document.getElementById('toast');if(t&&t.textContent===tr("Ready. Ask away."))t.hidden=true;c.classList.add('done');c._title.textContent=L('Ready — ask away','جاهز — اسأل ما تريد');c._phase.textContent=L('Indexed and searchable','تمت الفهرسة وجاهز للبحث')}
+  setTimeout(()=>{c.classList.add('out');setTimeout(()=>c.remove(),500)},good?1600:200);
+}
+
+/* ========== 5. KNOWLEDGE GALAXY in the library ========== */
+const lp=document.getElementById('libraryPanel'),addBtn=document.getElementById('add');
+if(lp&&addBtn){
+  const wrap=mk('div','galaxy');const cv=mk('canvas');const gt=mk('div','gTitle');const gh=mk('div','gHint');const tip=mk('div','gTip');tip.hidden=true;
+  wrap.append(cv,gt,gh,tip);addBtn.after(wrap);
+  let W=0,H=0,dpr=1,stars=[],key='',hover=null,raf=0,mouse=null;
+  const dust=Array.from({length:120},()=>({x:Math.random(),y:Math.random(),r:Math.random()*1.1+.2,p:Math.random()*6.28}));
+  const COLS=['#5B8CFF','#C04DFF','#2FE0FF','#F04FD0','#7B4DFF','#3BE0A0','#FF8A5B'];
+  const hash=s=>{let h=2166136261;for(const ch of String(s)){h^=ch.charCodeAt(0);h=Math.imul(h,16777619)}return (h>>>0)/4294967295};
+  function layout(){
+    const docs=Object.values(lib.docs||{});
+    const folders=[...new Set([...(lib.folders||[]),...docs.flatMap(d=>typeof documentFolders==='function'?documentFolders(d):[d.folder||'General'])])].filter(f=>docs.some(d=>(typeof documentFolders==='function'?documentFolders(d):[d.folder]).includes(f)));
+    const k=docs.map(d=>d.id+(d.starred?'*':'')).join()+'|'+folders.join()+'|'+W+'x'+H;
+    if(k===key)return;key=k;stars=[];
+    const n=Math.max(1,folders.length),cx=W/2,cy=H/2+6;
+    folders.forEach((f,fi)=>{
+      const a=fi/n*Math.PI*2-Math.PI/2+.4;
+      const rx=n===1?0:W*.30,ry=n===1?0:H*.26;
+      const fx=cx+Math.cos(a)*rx,fy=cy+Math.sin(a)*ry;
+      const ds=docs.filter(d=>(typeof documentFolders==='function'?documentFolders(d):[d.folder]).includes(f));
+      ds.forEach((d,di)=>{
+        if(stars.some(s=>s.id===d.id))return;
+        const h=hash(d.id),ang=h*6.283+di*2.4,rad=(n===1?28:16)+Math.sqrt(di+1)*(n===1?26:15);
+        stars.push({id:d.id,name:d.name,folder:f,pages:d.pages||1,starred:!!d.starred,
+          x:Math.max(14,Math.min(W-14,fx+Math.cos(ang)*rad)),y:Math.max(30,Math.min(H-24,fy+Math.sin(ang)*rad*.8)),
+          r:2.2+Math.log2((d.pages||1)+1)*.9,col:d.starred?'#FFB547':COLS[fi%COLS.length],ph:h*6.28,fi,fx,fy});
+      });
+    });
+    stars.folders=folders.map((f,fi)=>{const s=stars.filter(x=>x.folder===f);return{f,fi,x:s.reduce((a,b)=>a+b.x,0)/(s.length||1),y:Math.min(...s.map(b=>b.y))-14}});
+  }
+  function size(){const r=cv.getBoundingClientRect();if(!r.width)return false;dpr=Math.min(devicePixelRatio||1,2);if(W!==r.width||H!==r.height){W=r.width;H=r.height;cv.width=W*dpr;cv.height=H*dpr}return true}
+  function used(){return new Set((lastAnswerMeta?.sources||[]).map(s=>s.doc_id))}
+  function draw(now){
+    if(lp.hidden||!size()){raf=0;return}
+    layout();const ctx=cv.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,W,H);
+    const t=now/1000;
+    for(const d of dust){ctx.globalAlpha=.25+.25*Math.sin(t*1.5+d.p);ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(d.x*W,d.y*H,d.r,0,6.283);ctx.fill()}
+    ctx.globalAlpha=1;
+    gt.textContent=L('Knowledge galaxy','مجرّة المعرفة');
+    if(!stars.length){gh.textContent=L('Add documents to light up your galaxy','أضف مستندات لتضيء مجرّتك');raf=reduce?0:requestAnimationFrame(draw);return}
+    const u=used();
+    gh.textContent=u.size?L('Glowing stars = sources of the last answer · click a star to open','النجوم المضيئة = مصادر آخر إجابة · اضغط على نجمة لفتحها'):L(`${stars.length} documents · click a star to open`,`${stars.length} مستندات · اضغط على نجمة لفتحها`);
+    /* constellation lines */
+    for(const f of stars.folders){const s=stars.filter(x=>x.folder===f.f).sort((a,b)=>Math.atan2(a.y-a.fy,a.x-a.fx)-Math.atan2(b.y-b.fy,b.x-b.fx));
+      ctx.strokeStyle=COLS[f.fi%COLS.length];ctx.globalAlpha=.22;ctx.lineWidth=1;ctx.beginPath();s.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));if(s.length>2)ctx.closePath();ctx.stroke();
+      ctx.globalAlpha=.55;ctx.fillStyle='#AEB6E8';ctx.font='600 10px Inter, sans-serif';ctx.textAlign='center';ctx.fillText(f.f,f.x,Math.max(12,f.y-6))}
+    ctx.globalCompositeOperation='lighter';
+    for(const s of stars){
+      const lit=u.has(s.id),hov=hover===s,tw=.75+.25*Math.sin(t*2+s.ph);
+      const R=s.r*(lit?1.7:hov?1.5:1);
+      const g=ctx.createRadialGradient(s.x,s.y,0,s.x,s.y,R*(lit?7:4.5));g.addColorStop(0,s.col);g.addColorStop(.3,s.col+'88');g.addColorStop(1,s.col+'00');
+      ctx.globalAlpha=(lit?1:.75)*tw;ctx.fillStyle=g;ctx.beginPath();ctx.arc(s.x,s.y,R*(lit?7:4.5),0,6.283);ctx.fill();
+      ctx.globalAlpha=1;ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(s.x,s.y,R*.55,0,6.283);ctx.fill();
+      if(lit){const k=(t*.8+s.ph)%1;ctx.strokeStyle='#FFE3AE';ctx.globalAlpha=(1-k)*.8;ctx.lineWidth=1.4;ctx.beginPath();ctx.arc(s.x,s.y,R*2+k*18,0,6.283);ctx.stroke()}
+    }
+    ctx.globalCompositeOperation='source-over';ctx.globalAlpha=1;
+    raf=reduce?0:requestAnimationFrame(draw);
+  }
+  function pick(e){const r=cv.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;let best=null,bd=14;for(const s of stars){const d=Math.hypot(s.x-x,s.y-y);if(d<bd){bd=d;best=s}}return best}
+  cv.addEventListener('pointermove',e=>{hover=pick(e);cv.classList.toggle('hot',!!hover);
+    if(hover){tip.hidden=false;tip.replaceChildren(mk('span',null,hover.name),mk('small',null,`${hover.folder} · ${hover.pages} ${L(hover.pages===1?'page':'pages','صفحة')}`));tip.style.left=hover.x+'px';tip.style.top=hover.y+'px'}else tip.hidden=true;
+    if(reduce)draw(performance.now())});
+  cv.addEventListener('pointerleave',()=>{hover=null;tip.hidden=true});
+  cv.addEventListener('click',e=>{const s=pick(e);if(s&&typeof openDoc==='function')openDoc(s.id)});
+  const start=()=>{if(!lp.hidden&&!raf)raf=requestAnimationFrame(draw)};
+  new MutationObserver(start).observe(lp,{attributes:true,attributeFilter:['hidden']});
+  const baseRender=renderLib;renderLib=function(){const r=baseRender.apply(this,arguments);key='';start();return r};
+  start();
+}
+})();
+</script>
+<script>
+/* performance: mark the page busy while an answer is generating */
+(()=>{const b=setBusy;setBusy=function(v){const r=b.apply(this,arguments);document.body.classList.toggle('aiBusy',!!v);return r}})();
+</script>
+<script>
+/* "bing" chime when an answer starts to appear (made with Web Audio, no sound file needed) */
+(()=>{
+const SOUND_ON=true;            /* set to false to turn the chime off */
+let ac=null;
+const unlock=()=>{try{if(!ac)ac=new (window.AudioContext||window.webkitAudioContext)();if(ac.state==='suspended')ac.resume()}catch{}};
+addEventListener('pointerdown',unlock,{capture:true});addEventListener('keydown',unlock,{capture:true});
+function chime(){
+  if(!SOUND_ON||!ac)return;
+  const t=ac.currentTime+.02,out=ac.createGain();out.gain.value=.55;
+  const dl=ac.createDelay();dl.delayTime.value=.13;const fb=ac.createGain();fb.gain.value=.22;const wet=ac.createGain();wet.gain.value=.35;
+  dl.connect(fb);fb.connect(dl);dl.connect(wet);wet.connect(out);out.connect(ac.destination);
+  [[1318.5,0,.20],[1975.5,.09,.16]].forEach(([f,d,v])=>{
+    [[1,v,1.3],[2.76,v*.18,.45],[5.4,v*.06,.25]].forEach(([m,g,len])=>{
+      const o=ac.createOscillator(),e=ac.createGain();o.type='sine';o.frequency.value=f*m;
+      e.gain.setValueAtTime(0,t+d);e.gain.linearRampToValueAtTime(g,t+d+.006);e.gain.exponentialRampToValueAtTime(.0001,t+d+len);
+      o.connect(e);e.connect(out);e.connect(dl);o.start(t+d);o.stop(t+d+len+.05);
+    });
+  });
+}
+const msgs=document.getElementById('msgs');
+if(msgs)new MutationObserver(()=>{
+  if(typeof busy==='undefined'||!busy||(typeof voiceChat!=='undefined'&&voiceChat))return;
+  const b=[...msgs.querySelectorAll('.bot')].pop();
+  if(!b||b.dataset.chimed||b.querySelector('.thinking'))return;
+  if((b.textContent||'').trim().length>1){b.dataset.chimed='1';chime()}
+}).observe(msgs,{childList:true,subtree:true,characterData:true});
+window.verityChime=()=>{unlock();chime()};
+})();
+</script>
+</body>
+</html>

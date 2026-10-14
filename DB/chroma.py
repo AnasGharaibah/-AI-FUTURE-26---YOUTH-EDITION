@@ -58,7 +58,7 @@ class VectorStore:
         self._bm25 = self._rows = None
 
     def save_parents(self, parents):
-        self.parents_path.write_text(json.dumps({p["id"]: p for p in parents}, ensure_ascii=False))
+        self.parents_path.write_text(json.dumps({p["id"]: p for p in parents}, ensure_ascii=False), encoding="utf-8")
         self._parents = None
 
     # ------------------------------------------------------------- reading
@@ -83,7 +83,7 @@ class VectorStore:
 
     def parent(self, parent_id):
         if self._parents is None:
-            self._parents = json.loads(self.parents_path.read_text()) if self.parents_path.exists() else {}
+            self._parents = json.loads(self.parents_path.read_text(encoding="utf-8")) if self.parents_path.exists() else {}
         return self._parents.get(parent_id)
 
     def sources(self):
@@ -94,25 +94,29 @@ class VectorStore:
         return out
 
     # ------------------------------------------------------------ searching
-    def vector_search(self, query_vector, k: int = 20):
+    def vector_search(self, query_vector, k: int = 20, sources=None):
+        """sources: optional list of file names to search in (None = all)."""
         n = min(k, self.count())
         if n == 0:
             return []
-        res = self.col.query(query_embeddings=[query_vector], n_results=n)
+        where = {"source": {"$in": list(sources)}} if sources else None
+        res = self.col.query(query_embeddings=[query_vector], n_results=n, where=where)
         return [(i, 1 - d) for i, d in zip(res["ids"][0], res["distances"][0])]   # (id, similarity)
 
-    def keyword_search(self, query: str, k: int = 20):
-        self._load()
+    def keyword_search(self, query: str, k: int = 20, sources=None):
+        rows = self._load()
         if not self._bm25:
             return []
         scores = self._bm25.get_scores(_tok(query))
-        top = sorted(range(len(scores)), key=lambda i: -scores[i])[:k]
-        return [(self._ids[i], float(scores[i])) for i in top if scores[i] > 0]
+        allowed = set(sources) if sources else None
+        top = [i for i in sorted(range(len(scores)), key=lambda i: -scores[i])
+               if scores[i] > 0 and (allowed is None or rows[self._ids[i]]["source"] in allowed)]
+        return [(self._ids[i], float(scores[i])) for i in top[:k]]
 
-    def hybrid_search(self, query: str, query_vector, k: int = 20, rrf_k: int = 60):
+    def hybrid_search(self, query: str, query_vector, k: int = 20, rrf_k: int = 60, sources=None):
         """Vector + keyword, fused by reciprocal rank. Returns chunk dicts with scores."""
-        vec = self.vector_search(query_vector, k)
-        kw = self.keyword_search(query, k)
+        vec = self.vector_search(query_vector, k, sources)
+        kw = self.keyword_search(query, k, sources)
         fused, why = {}, {}
         sims = dict(vec)
         for name, ranked in (("vector", vec), ("keyword", kw)):

@@ -116,7 +116,7 @@ def main():
                        f"{'-norewrite' if args.no_rewrite else ''}")
     rdir.mkdir(exist_ok=True)
     summary = summarize(out, tag, model)
-    (rdir / f"{tag}.json").write_text(json.dumps({"summary": summary, "rows": out}, ensure_ascii=False, indent=1))
+    (rdir / f"{tag}.json").write_text(json.dumps({"summary": summary, "rows": out}, ensure_ascii=False, indent=1), encoding="utf-8")
     print(json.dumps(summary, ensure_ascii=False, indent=1))
     print(f"total {time.time() - t_all:.0f}s -> results/{tag}.json")
 
@@ -138,8 +138,8 @@ def retrieval_only(args, rdir):
            "hit@5": round(sum(x > 0 for x in ranks) / n, 3), "mrr": round(sum(1 / x for x in ranks if x) / n, 3),
            "seconds_per_query": round((time.time() - t0) / n, 2)}
     rdir.mkdir(exist_ok=True)
-    (rdir / f"{res['tag']}.retrieval.json").write_text(json.dumps(res, ensure_ascii=False, indent=1))
-    print(json.dumps(res, ensure_ascii=False, indent=1))
+    (rdir / f"{res['tag']}.retrieval.json").write_text(json.dumps(res, ensure_ascii=False, indent=1), encoding="utf-8")
+    print(json.dumps(res, ensure_ascii=False, indent=1), encoding="utf-8")
 
 
 def summarize(rows, tag, model):
@@ -155,7 +155,7 @@ def summarize(rows, tag, model):
 
 
 def table(rdir):
-    runs = [json.loads(p.read_text())["summary"] for p in sorted(rdir.glob("*.json")) if not p.name.endswith(".retrieval.json")]
+    runs = [json.loads(p.read_text(encoding="utf-8"))["summary"] for p in sorted(rdir.glob("*.json")) if not p.name.endswith(".retrieval.json")]
     types = sorted({t for s in runs for t in s["by_type"]})
     print("| run | model | acc | hit@5 | s/q | " + " | ".join(types) + " |")
     print("|" + "---|" * (5 + len(types)))

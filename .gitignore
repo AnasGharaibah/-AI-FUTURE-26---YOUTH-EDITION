@@ -1,5 +1,14 @@
 .DS_Store
 __pycache__/
 .venv/
+.pytest_cache/
 .env
-voice_env/.venv/
+
+# rebuilt by `uv run python -m DB.main ingest`
+data/chroma/
+data/chroma_*/
+data/parsed/
+data/embed_cache.jsonl
+
+# local app state (folders / stars from the web UI)
+data/library.json

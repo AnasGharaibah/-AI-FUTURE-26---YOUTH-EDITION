@@ -1,39 +1,52 @@
 # Yoth AI
 
-## Voice mode
+## Setup
+```bash
+uv sync                                   # Python env (Windows without uv on PATH: py -m uv sync)
+ollama pull bge-m3                        # embeddings
+ollama pull qwen3:4b-instruct             # chat model (YOTH_MODEL=... to switch)
+```
+
+## Web app
+```bash
+uv run uvicorn api:app                    # then open http://127.0.0.1:8000
+```
+`api.py` serves the page in `UI/` and the API it uses:
+
+- **Chat** – `POST /api/chat` runs `Agent/rag.py` and streams the answer with numbered sources; click a citation to
+  open the document at the cited passage. Searches all documents, one folder, or one document.
+- **Library** – the files in `data/raw/`. Upload (`POST /api/upload`) saves into `data/raw/` and re-indexes; delete
+  removes the file and re-indexes. Folders and stars are kept in `data/library.json`.
+- **Voice** – the browser records the mic; `POST /api/stt` transcribes it, `POST /api/tts` reads answers aloud.
+
+Chats are saved in the browser (local storage). The first PDF upload downloads the Marker models once (slow).
+
+## Voice
 
 Speak Arabic or English, hear the answer. 100% local.
 
-**STT** – `mlx-whisper` (`whisper-large-v3-turbo`, downloaded on first use, ~1.6 GB).
-**TTS** – OmniVoice in an isolated env (`voice_env/`, needs torch 2.8.0; the main project uses a newer torch).
-If the OmniVoice worker is not running, speech automatically falls back to macOS `say` (Majed / Samantha).
+**STT** – macOS: `mlx-whisper`; Windows/Linux: [OpenAI Whisper](https://github.com/openai/whisper) (`turbo`,
+downloaded on first use, ~1.6 GB; audio is decoded with PyAV, so no ffmpeg install is needed).
+**TTS** – macOS `say` (Majed / Samantha); Windows: the built-in voice. For Arabic speech on Windows add an Arabic voice
+in **Settings → Time & language → Speech**, otherwise the default voice is used.
 
-### Setup
 ```bash
-uv sync                                   # main env (mlx-whisper, sounddevice, soundfile)
-cd voice_env && uv sync && cd ..          # OmniVoice env (optional - without it `say` is used)
-```
-macOS: allow the terminal/VS Code to use the mic – **System Settings → Privacy & Security → Microphone**.
-
-### Run
-```bash
-(cd voice_env && uv run python tts_server.py)        # optional, terminal 1 - keeps OmniVoice loaded
-uv run python -m Agent.main --voice                  # terminal 2 (--lang en | auto for mixed speech)
-uv run uvicorn api:app                               # API: POST /stt (audio upload), POST /tts (text -> wav)
+uv run python -m Agent.main --voice       # terminal voice chat (--lang en | auto for mixed speech)
 ```
 Speak after "listening…"; the question is sent after ~1.2 s of silence. Ctrl+C quits.
 
 ```python
 from Agent.voice import listen, transcribe, speak
 transcribe("q.wav", language=None)       # {"text", "language", "seconds"}
-speak("The limit is 150 JOD [1].")       # -> "omnivoice" | "say"
+speak("The limit is 150 JOD [1].")       # -> "say" | "sapi"
 ```
-All settings (models, language, silence threshold, spoken length, engine) are in `CONFIG` at the top of `Agent/voice.py`.
+All settings (models, language, silence threshold, spoken length) are in `CONFIG` at the top of `Agent/voice.py`.
 
 ### Troubleshooting
-- *No sound / empty transcript*: check the mic permission above; raise `silence_rms` if background noise never "ends" a recording, lower it if speech is cut off.
-- *Slow answers / swap*: 8 GB is tight. Check `ollama ps`; use a smaller LLM (`YOTH_MODEL=...`) or `stt_model = mlx-community/whisper-small-mlx`, and close other apps.
-- *OmniVoice not used*: `curl 127.0.0.1:8765/health`; the worker needs ~1 min to load. Force an engine with `CONFIG["tts_engine"] = "say"`.
+- *No sound / empty transcript*: allow the mic (macOS: **System Settings → Privacy & Security → Microphone**;
+  browser: the mic prompt); raise `silence_rms` if background noise never "ends" a recording, lower it if speech is cut off.
+- *Slow answers / swap*: 8 GB is tight. Check `ollama ps`; use a smaller LLM (`YOTH_MODEL=...`) or a smaller
+  speech model (`stt_model` / `whisper_model` in `CONFIG`), and close other apps.
 
 ## Arabic government-service mode
 

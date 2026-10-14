@@ -12,10 +12,17 @@ Usage:
     chunker = Chunker("structure")
     chunks, parents = chunker.chunk_text(markdown, source="report.pdf")
 """
+
 import hashlib
 import re
+import sys
+from pathlib import Path
 
-from .arabic import normalize_search
+if __package__:
+    from .arabic import normalize_search
+else:                                   # run directly: python DB/chunks.py
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from DB.arabic import normalize_search
 
 PAGE_RE = re.compile(r"^\{(\d+)\}-{48}\s*$")
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)")
@@ -342,3 +349,24 @@ class Chunker:
 
 
 ch = Chunker          # keeps the short name `ch` your team started with
+
+
+if __name__ == "__main__":
+    # python DB/chunks.py [structure|fixed] [file.md ...]   (default: data/parsed/*.md)
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+    args = sys.argv[1:]
+    algo = args.pop(0) if args and args[0] in ("structure", "fixed") else "structure"
+    files = [Path(a) for a in args] or sorted(
+        (Path(__file__).resolve().parent.parent / "data" / "parsed").glob("*.md"))
+    chunks, parents = Chunker(algo).chunk_files(files)
+    for path in files:
+        source = path.name[:-3]
+        mine = [c for c in chunks if c["source"] == source]
+        if mine:
+            toks = [c["tokens"] for c in mine]
+            print(f"{source:40} {mine[0]['profile']:7} {len(mine):4} chunks  "
+                  f"tokens avg {sum(toks) // len(toks):4} max {max(toks):4}")
+    print(f"\n{len(chunks)} chunks, {len(parents)} parent sections ({algo})")
+    if chunks:
+        print("\nexample:\n" + chunks[0]["embed_text"][:500])

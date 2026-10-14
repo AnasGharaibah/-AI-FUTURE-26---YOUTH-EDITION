@@ -7,11 +7,11 @@
     uv run python -m DB.main stats                 what is in the index
     uv run python -m DB.main compare "question"    structure vs fixed chunking
 """
+
 import argparse
 import json
 
 from .pipeline import Pipeline
-
 
 def show_hits(db, hits):
     for i, h in enumerate(hits, 1):
@@ -19,7 +19,6 @@ def show_hits(db, hits):
         print(f"\n[{i}] {db.cite(h)} | {h['section'] or '-'} | {h['found_by']} "
               f"| score={h['score']}{extra}")
         print("    " + h["text"][:300].replace("\n", "\n    "))
-
 
 def main():
     ap = argparse.ArgumentParser(prog="python -m DB.main")

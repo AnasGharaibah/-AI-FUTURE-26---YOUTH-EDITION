@@ -72,19 +72,25 @@ def _generate(question: str, sources: str, history, model, reminder: str = "") -
 
 
 def answer(question: str, thread_id: str = "default", model: str | None = None, use_history: bool = True,
-           rerank: bool | None = None, rewrite: bool | None = None) -> dict:
+           rerank: bool | None = None, rewrite: bool | None = None, sources: list[str] | None = None,
+           history: list[tuple[str, str]] | None = None) -> dict:
     """Full pipeline. Returns {"answer", "sources": [{n, file, page, section, text}], "question", "standalone",
-    "msa", "flags": [...], "timings": {...}}."""
+    "msa", "flags": [...], "timings": {...}}.
+    sources: limit the search to these file names. history: (question, answer) pairs kept by the caller
+    (e.g. the web UI) - replaces the server-side memory of `thread_id`."""
     t0 = time.time()
     model = model or llm.MODEL
-    hist = _history.setdefault(thread_id, deque(maxlen=CONFIG["history_turns"])) if use_history else deque()
+    if history is not None:
+        hist, use_history = deque(history[-CONFIG["history_turns"]:]), False
+    else:
+        hist = _history.setdefault(thread_id, deque(maxlen=CONFIG["history_turns"])) if use_history else deque()
     raw = normalize_display(question)
 
     standalone = llm.standalone_question(raw, list(hist), model) if hist else raw
     t1 = time.time()
     pipe = db()
     pipe.cfg["rewriter"] = lambda q: llm.rewrite_to_msa(q, model)
-    hits = pipe.search(standalone, rerank=rerank, rewrite=rewrite)
+    hits = pipe.search(standalone, rerank=rerank, rewrite=rewrite, sources=sources)
     t2 = time.time()
     res = {"question": raw, "standalone": standalone, "flags": [], "retrieved": [h["source"] for h in hits], "sources": [
         {"n": i, "file": h["source"], "page": h.get("page"), "section": h["section"], "text": h["text"]}
@@ -107,6 +113,9 @@ def answer(question: str, thread_id: str = "default", model: str | None = None, 
         if bad:
             res["flags"].append("unsupported_numbers:" + ",".join(bad))
             log.warning("numbers not found in sources: %s | q=%s", bad, standalone)
+        if is_refusal(text) and _CITE.search(text):      # a cited answer with a stray "not found" line appended
+            text = normalize_display(text.replace(REFUSAL_AR, "").replace(REFUSAL_EN, ""))
+            res["flags"].append("stripped_refusal")
         if is_refusal(text):
             res["sources"] = []
         res["answer"] = text

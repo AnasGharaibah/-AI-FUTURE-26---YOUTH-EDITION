@@ -1,20 +1,20 @@
-"""Voice in/out.   STT: mlx-whisper (local, Apple Silicon).   TTS: OmniVoice worker, fallback macOS `say`.
+"""Voice in/out.   STT: mlx-whisper (Apple Silicon) / OpenAI Whisper (Windows, Linux).
+TTS: macOS `say` / Windows SAPI.
 
     from Agent.voice import listen, transcribe, speak
     listen(seconds=None, language="ar")      # mic -> {"text", "language", "seconds"}  (stops on silence)
     transcribe("q.wav", language=None)       # file / numpy array
-    speak("مرحبا", block=True)               # -> engine used: "omnivoice" | "say"
-
-OmniVoice needs torch 2.8.0, so it lives in voice_env/ and is called over HTTP:
-    cd voice_env && uv run python tts_server.py
+    speak("مرحبا", block=True)               # -> engine used: "say" | "sapi"
 """
 import io
 import logging
 import re
 import subprocess
+import sys
 import tempfile
 import threading
 import time
+from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
@@ -23,10 +23,13 @@ from DB.arabic import normalize_display
 
 log = logging.getLogger("yoth.voice")
 ROOT = Path(__file__).resolve().parent.parent
+IS_MAC = sys.platform == "darwin"
 
 CONFIG = {
     # --- STT
     "stt_model": "mlx-community/whisper-large-v3-turbo",      # light option: mlx-community/whisper-small-mlx
+    "whisper_model": "turbo",                                  # OpenAI Whisper (non-Mac); faster on CPU: "small" / "base"
+    "whisper_device": "auto",                                  # "auto" | "cpu" | "cuda"
     "stt_language": "ar",                                      # "ar" | "en" | None (auto, mixed speech)
     "sample_rate": 16000,
     "silence_rms": 0.01,                                       # RMS below this counts as silence
@@ -34,13 +37,9 @@ CONFIG = {
     "max_record_seconds": 30,
     "min_speech_seconds": 0.3,
     # --- TTS
-    "tts_engine": "auto",                                      # "auto" (omnivoice -> say) | "omnivoice" | "say"
-    "tts_url": "http://127.0.0.1:8765",
-    "tts_timeout": 60,
     "max_spoken_chars": 300,
     "max_spoken_sentences": 3,
     "say_voices": {"ar": "Majed", "en": "Samantha"},
-    "omnivoice_langs": {"ar": "arb", "en": "en"},
     "arabic_ratio": 0.30,
 }
 
@@ -95,14 +94,49 @@ def _load_audio(audio) -> np.ndarray:
             data = np.interp(np.linspace(0, len(data), int(len(data) * sr / file_sr), endpoint=False),
                              np.arange(len(data)), data).astype(np.float32)
         return data
-    except Exception:                    # mp3 / m4a / anything soundfile can't read -> ffmpeg
-        from mlx_whisper.audio import load_audio
-        if isinstance(audio, bytes):
-            with tempfile.NamedTemporaryFile(suffix=".bin") as f:
-                f.write(audio)
-                f.flush()
-                return load_audio(f.name)
-        return load_audio(str(audio))
+    except Exception:                    # webm / mp3 / m4a / anything soundfile can't read
+        if IS_MAC:                       # ffmpeg
+            from mlx_whisper.audio import load_audio
+            if isinstance(audio, bytes):
+                with tempfile.TemporaryDirectory() as d:
+                    p = Path(d) / "audio.bin"
+                    p.write_bytes(audio)
+                    return load_audio(str(p))
+            return load_audio(str(audio))
+        return _decode_av(io.BytesIO(audio) if isinstance(audio, bytes) else str(audio))
+
+
+def _decode_av(src) -> np.ndarray:
+    """Any audio/video container -> float32 mono 16 kHz with PyAV (no ffmpeg install needed)."""
+    import av
+    resampler = av.AudioResampler(format="flt", layout="mono", rate=CONFIG["sample_rate"])
+    out = []
+    with av.open(src) as f:
+        for frame in f.decode(audio=0):
+            out += [r.to_ndarray().reshape(-1) for r in resampler.resample(frame)]
+    out += [r.to_ndarray().reshape(-1) for r in resampler.resample(None)]
+    return np.concatenate(out).astype(np.float32) if out else np.zeros(0, dtype=np.float32)
+
+
+@lru_cache(maxsize=1)
+def _whisper():
+    """OpenAI Whisper (github.com/openai/whisper). The model is downloaded on first use (turbo: ~1.6 GB)."""
+    import whisper
+    device = CONFIG["whisper_device"]
+    if device == "auto":
+        import torch
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+    return whisper.load_model(CONFIG["whisper_model"], device=device)
+
+
+def _stt(data: np.ndarray, language: str | None) -> dict:
+    if IS_MAC:
+        import mlx_whisper
+        return mlx_whisper.transcribe(data, path_or_hf_repo=CONFIG["stt_model"], language=language,
+                                      task="transcribe", condition_on_previous_text=False, verbose=None)
+    model = _whisper()
+    return model.transcribe(data, language=language, task="transcribe", condition_on_previous_text=False,
+                            fp16=model.device.type == "cuda", verbose=None)
 
 
 def transcribe(audio, language: str | None = "ar") -> dict:
@@ -116,9 +150,7 @@ def transcribe(audio, language: str | None = "ar") -> dict:
         return {"text": "", "language": language or "", "seconds": round(time.time() - t0, 2)}
     if len(data) < CONFIG["min_speech_seconds"] * CONFIG["sample_rate"] or _rms(data) < 1e-4:
         return {"text": "", "language": language or "", "seconds": round(time.time() - t0, 2)}
-    import mlx_whisper
-    res = mlx_whisper.transcribe(data, path_or_hf_repo=CONFIG["stt_model"], language=language,
-                                 task="transcribe", condition_on_previous_text=False, verbose=None)
+    res = _stt(data, language)
     return {"text": normalize_display(res.get("text") or ""), "language": res.get("language") or language or "",
             "seconds": round(time.time() - t0, 2)}
 
@@ -235,20 +267,39 @@ _play_lock = threading.Lock()
 def _play_wav(path: str, block: bool):
     def run():
         with _play_lock:
-            subprocess.run(["afplay", path], check=False)
+            if sys.platform == "win32":
+                import winsound
+                winsound.PlaySound(path, winsound.SND_FILENAME)
+            else:
+                subprocess.run(["afplay", path], check=False)
     if block:
         run()
     else:
         threading.Thread(target=run, daemon=True).start()
 
 
-def _omnivoice(text: str, lang: str) -> bytes:
-    import urllib.request, json
-    req = urllib.request.Request(CONFIG["tts_url"] + "/tts",
-                                 data=json.dumps({"text": text, "language": CONFIG["omnivoice_langs"][lang]}).encode(),
-                                 headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=CONFIG["tts_timeout"]) as r:
-        return r.read()
+_SAPI_PS = """
+Add-Type -AssemblyName System.Speech
+$s = New-Object System.Speech.Synthesis.SpeechSynthesizer
+$v = $s.GetInstalledVoices() | Where-Object { $_.Enabled -and $_.VoiceInfo.Culture.TwoLetterISOLanguageName -eq $env:YOTH_TTS_LANG } | Select-Object -First 1
+if ($v) { $s.SelectVoice($v.VoiceInfo.Name) }
+$s.SetOutputToWaveFile($env:YOTH_TTS_OUT)
+$s.Speak([IO.File]::ReadAllText($env:YOTH_TTS_IN, [Text.Encoding]::UTF8))
+$s.Dispose()
+"""
+
+
+def _sapi(text: str, lang: str) -> bytes:
+    """Windows built-in voice (System.Speech). Uses an installed voice for `lang` when there is one
+    (Arabic: Settings > Time & language > Speech > Add voices), else the default voice."""
+    import os
+    with tempfile.TemporaryDirectory() as d:
+        src, wav = Path(d) / "in.txt", Path(d) / "out.wav"
+        src.write_text(text, encoding="utf-8")
+        env = {**os.environ, "YOTH_TTS_LANG": lang, "YOTH_TTS_IN": str(src), "YOTH_TTS_OUT": str(wav)}
+        subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", _SAPI_PS],
+                       env=env, check=True, capture_output=True)
+        return wav.read_bytes()
 
 
 def synthesize(text: str, language: str | None = None, clean: bool = True):
@@ -257,14 +308,8 @@ def synthesize(text: str, language: str | None = None, clean: bool = True):
     if not spoken:
         return None, "none", ""
     lang = language or detect_language(spoken)
-    engine = CONFIG["tts_engine"]
-    if engine in ("auto", "omnivoice"):
-        try:
-            return _omnivoice(spoken, lang), "omnivoice", spoken
-        except Exception as e:
-            log.warning("OmniVoice unavailable (%s) - falling back to say", e)
-            if engine == "omnivoice":
-                raise
+    if sys.platform == "win32":
+        return _sapi(spoken, lang), "sapi", spoken
     with tempfile.TemporaryDirectory() as d:
         aiff, wav = f"{d}/o.aiff", f"{d}/o.wav"
         subprocess.run(["say", "-v", CONFIG["say_voices"][lang], "-o", aiff, spoken], check=True)
