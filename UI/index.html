@@ -911,6 +911,7 @@ async function ask(q,opts={}){
           else if(ev.scope==='all')updateScopeLabel();
         }
         else if(ev.type==='token'){text+=ev.text;paint(bub,text,src,q,false);$('#msgs').scrollTop=1e9}
+        else if(ev.type==='final'){text=ev.text;paint(bub,text,src,q,false)}
         else if(ev.type==='done'){mode=ev.mode||mode;setPipeline(mode==='documents'?'Grounded answer ✓':'Chat response ✓',false)}
         else if(ev.type==='error')text='NOTE: '+ev.text}}
   }catch(e){

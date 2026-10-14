@@ -41,6 +41,9 @@ def main():
                     print("\n   sources: " + "; ".join(f"[{x['n']}] {x['file']}" + (f" p.{x['page']}" if x["page"] else "")
                                                        for x in val), end="", flush=True)
                     continue
+                if kind == "replace":                   # the checked answer differs from the streamed draft
+                    print(f"\n   [checked answer]\nai> {val}", end="", flush=True)
+                    continue
                 print(f"\n   [tool: {val}]\nai> " if kind == "tool" else val, end="", flush=True)
         except KeyboardInterrupt:                       # Ctrl+C while answering: stop this answer, keep the chat
             print("\n   (stopped)", end="")

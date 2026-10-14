@@ -60,6 +60,41 @@ def chat(messages: list[dict], model: str | None = None, max_tokens: int = 400, 
     return re.sub(r"<think>.*?</think>", "", text, flags=re.S).strip()
 
 
+def chat_stream(messages: list[dict], model: str | None = None, max_tokens: int = 400,
+                temperature: float | None = None):
+    """Like chat(), but yields the reply in pieces as the model produces them (thinking disabled)."""
+    model = model or MODEL
+    opts = {**OPTIONS, "num_predict": max_tokens}
+    if temperature is not None:
+        opts["temperature"] = temperature
+    try:
+        if model.startswith("qwen3") and "instruct" not in model and "vl" not in model:
+            prompt = "".join(f"<|im_start|>{m['role']}\n{m['content']}<|im_end|>\n" for m in messages)
+            prompt += "<|im_start|>assistant\n<think>\n\n</think>\n\n"
+            for part in _client().generate(model=model, prompt=prompt, raw=True, stream=True,
+                                           options={**opts, "stop": ["<|im_end|>"]}):
+                yield part["response"] or ""
+            return
+        kw = {} if model in _no_think else {"think": False}
+        try:
+            parts = _client().chat(model=model, messages=messages, options=opts, stream=True, **kw)
+            first = next(parts, None)                   # the request is sent here: unsupported `think` fails now
+        except Exception as e:
+            if not (kw and "think" in str(e).lower()):
+                raise
+            _no_think.add(model)
+            parts = _client().chat(model=model, messages=messages, options=opts, stream=True)
+            first = next(parts, None)
+        if first is not None:
+            yield first["message"]["content"] or ""
+        for part in parts:
+            yield part["message"]["content"] or ""
+    except Exception as e:
+        if "not found" in str(e).lower():
+            raise RuntimeError(f"Model missing. Run: ollama pull {model}") from e
+        raise
+
+
 def _chatml_nothink(messages, model, opts) -> str:
     """qwen3 here ignores think=False (the chat template never closes the think block), so build the ChatML prompt
     ourselves and pre-fill an empty <think></think> - the documented way to turn thinking off."""

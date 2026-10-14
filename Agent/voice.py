@@ -9,6 +9,7 @@ when no Arabic voice is installed (check_voices() warns at startup).
 """
 import io
 import logging
+import os
 import re
 import subprocess
 import sys
@@ -157,8 +158,16 @@ def transcribe(audio, language: str | None = "ar") -> dict:
             "seconds": round(time.time() - t0, 2)}
 
 
-def listen(seconds: float | None = None, language: str | None = CONFIG["stt_language"]) -> dict:
-    """Record from the mic, then transcribe."""
+FROM_CONFIG = "config"          # default language marker: read CONFIG["stt_language"] when called, not at import
+
+
+def _language(language):
+    return CONFIG["stt_language"] if language == FROM_CONFIG else language
+
+
+def listen(seconds: float | None = None, language: str | None = FROM_CONFIG) -> dict:
+    """Record from the mic, then transcribe. language: "ar" | "en" | None (auto); default CONFIG["stt_language"]."""
+    language = _language(language)
     t0 = time.time()
     out = transcribe(record(seconds), language)
     out["seconds"] = round(time.time() - t0, 2)
@@ -266,14 +275,18 @@ def digits_to_words(text: str) -> str:
 _play_lock = threading.Lock()
 
 
-def _play_wav(path: str, block: bool):
+def _play_wav(path: str, block: bool, delete_after: bool = False):
     def run():
-        with _play_lock:
-            if sys.platform == "win32":
-                import winsound
-                winsound.PlaySound(path, winsound.SND_FILENAME)
-            else:
-                subprocess.run(["afplay", path], check=False)
+        try:
+            with _play_lock:
+                if sys.platform == "win32":
+                    import winsound
+                    winsound.PlaySound(path, winsound.SND_FILENAME)
+                else:
+                    subprocess.run(["afplay", path], check=False)
+        finally:
+            if delete_after:
+                Path(path).unlink(missing_ok=True)
     if block:
         run()
     else:
@@ -309,7 +322,6 @@ $reader.ReadBytes($bytes)
 
 def _powershell(script: str, **env) -> str:
     """Run a PowerShell script from a temp .ps1 file (passed inline with -Command, the WinRT awaits hang)."""
-    import os
     with tempfile.TemporaryDirectory() as d:
         ps1 = Path(d) / "script.ps1"
         ps1.write_text(script, encoding="utf-8-sig")              # BOM: PowerShell 5.1 reads the file as UTF-8
@@ -404,14 +416,18 @@ def speak(text: str, language: str | None = None, block: bool = True, save_to: s
         return engine
     log.info("TTS engine: %s | %r", engine, spoken)
     print(f"   [tts: {engine}]")
-    path = save_to or tempfile.NamedTemporaryFile(suffix=".wav", delete=False).name
+    if save_to:
+        path = save_to
+    else:
+        fd, path = tempfile.mkstemp(suffix=".wav", prefix="yoth-tts-")
+        os.close(fd)
     Path(path).write_bytes(wav)
-    _play_wav(path, block)
+    _play_wav(path, block, delete_after=not save_to)      # temp file is removed once played
     return engine
 
 
 # =============================================================== loop
-def voice_loop(answer_fn, language: str | None = CONFIG["stt_language"]):
+def voice_loop(answer_fn, language: str | None = FROM_CONFIG):
     """listen -> answer_fn(text) -> print answer -> speak it. Ctrl+C at the prompt exits.
     answer_fn(text) -> str (full answer, with sources)."""
     check_voices()

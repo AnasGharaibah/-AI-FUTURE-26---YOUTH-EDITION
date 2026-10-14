@@ -1,7 +1,7 @@
 """The agent: a LangGraph loop  llm -> (tool calls?) -> tools -> llm ... -> answer.
 
     from Agent.brain import ask
-    print(ask("What is the hotel limit in Dubai?", thread_id="anas"))
+    print(ask("كم رسوم تجديد جواز السفر؟", thread_id="anas"))
 """
 import os
 
@@ -9,6 +9,8 @@ from langchain_core.messages import SystemMessage
 from langchain_ollama import ChatOllama
 from langgraph.graph import END, START, MessagesState, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
+
+from DB.arabic import normalize_display
 
 from . import llm, rag
 from .context import SYSTEM_PROMPT
@@ -53,16 +55,20 @@ def ask(question: str, thread_id: str = "default") -> str:
 
 
 def stream(question: str, thread_id: str = "default"):
-    """Yield ('tool', name) when a tool is called and ('text', chunk) for the answer.
-    In rag mode the answer is checked (citations / numbers) before it is released, then sent in word groups,
-    followed by ('sources', [...])."""
+    """Yield ('tool', name) when a tool is called and ('text', chunk) for the answer as the model writes it.
+    In rag mode the finished answer is then checked (citations / numbers / refusal); if the check changed it,
+    ('replace', checked_answer) follows. Then ('sources', [...])."""
     if MODE == "rag":
         yield "tool", "search_documents"
-        r = rag.answer(question, thread_id)
-        words = r["answer"].split(" ")
-        for i in range(0, len(words), 4):
-            yield "text", " ".join(words[i:i + 4]) + (" " if i + 4 < len(words) else "")
-        yield "sources", r["sources"]
+        streamed = []
+        for kind, val in rag.answer_stream(question, thread_id):
+            if kind == "token":
+                streamed.append(val)
+                yield "text", val
+            elif kind == "done":
+                if normalize_display("".join(streamed)) != val["answer"]:
+                    yield "replace", val["answer"]
+                yield "sources", val["sources"]
         return
     cfg = {"configurable": {"thread_id": thread_id}}
     for msg, meta in graph().stream({"messages": [("user", question)]}, cfg, stream_mode="messages"):

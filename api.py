@@ -299,7 +299,8 @@ def _line(obj) -> str:
 
 @app.post("/api/chat")
 def chat(req: ChatIn):
-    """Streams newline-delimited JSON events: sources / token / verification / not_found / done / error."""
+    """Streams newline-delimited JSON events: sources / token (draft, as the model writes) / final (the checked
+    answer, replaces the draft) / verification / not_found / done / error."""
     def events():
         try:
             q = req.question.strip()
@@ -319,15 +320,20 @@ def chat(req: ChatIn):
                 yield _line({"type": "not_found", "text": rag.REFUSAL_AR if is_arabic(q) else rag.REFUSAL_EN})
                 yield _line({"type": "done", "mode": "documents", "found": False})
                 return
-            r = rag.answer(q, sources=names, history=_pairs(req.history))
+            r = None
+            for kind, val in rag.answer_stream(q, sources=names, history=_pairs(req.history)):
+                if kind == "retrieved":                 # sources first, so streamed [n] become clickable
+                    yield _line({"type": "sources", "sources": [_source(s) for s in val["sources"]]})
+                elif kind == "token":
+                    yield _line({"type": "token", "text": val})
+                elif kind == "done":
+                    r = val
             yield _line({"type": "trace", "trace": [], "query": r.get("msa") or r["standalone"]})
             if not r["sources"]:
                 yield _line({"type": "not_found", "text": r["answer"]})
                 yield _line({"type": "done", "mode": "documents", "found": False})
                 return
-            sources = [_source(s) for s in r["sources"]]
-            yield _line({"type": "sources", "sources": sources})
-            yield _line({"type": "token", "text": r["answer"]})
+            yield _line({"type": "final", "text": r["answer"]})
             yield _line({"type": "verification", "items": _verify(r["answer"], r["sources"])})
             yield _line({"type": "done", "mode": "documents", "found": True})
         except Exception as e:

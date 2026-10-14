@@ -12,7 +12,7 @@ import re
 import time
 from collections import deque
 
-from DB.arabic import is_arabic, normalize_display
+from DB.arabic import is_arabic, normalize_display, normalize_search
 from DB.pipeline import Pipeline
 
 from . import llm
@@ -44,9 +44,25 @@ def db() -> Pipeline:
     return Pipeline.shared()
 
 
+# Core of the refusal sentences, compared after normalize_search (hamza/ta-marbuta/diacritics/case/punctuation
+# don't matter): catches "لم أجد هذه المعلومة في الوثائق المتاحة." as well as the exact wording.
+_REFUSAL_KEYS = (normalize_search("لم أجد هذه المعلومة"), normalize_search("could not find this information"),
+                 normalize_search("couldn't find this information"))
+
+
 def is_refusal(text: str) -> bool:
-    t = normalize_display(text)
-    return REFUSAL_AR.rstrip(".") in t or REFUSAL_EN.rstrip(".").lower() in t.lower()
+    t = normalize_search(text)
+    return any(k in t for k in _REFUSAL_KEYS)
+
+
+def strip_refusal(text: str) -> str:
+    """Remove the "not found" sentences (any wording variant) and keep the rest of the answer."""
+    lines = []
+    for line in text.splitlines():
+        kept = " ".join(s for s in _SENTENCE.split(line) if not is_refusal(s))
+        if kept.strip() or not line.strip():
+            lines.append(kept)
+    return normalize_display(re.sub(r"\n{3,}", "\n\n", "\n".join(lines)))
 
 
 def _evidence(hits) -> list[str]:
@@ -98,12 +114,28 @@ def drop_number_sentences(answer: str, bad: list[str]) -> str:
     return re.sub(r"\n{3,}", "\n\n", "\n".join(kept_lines)).strip()
 
 
-def _generate(question: str, sources: str, history, model, reminder: str = "") -> str:
+def _messages(question: str, sources: str, history, reminder: str = "") -> list[dict]:
     msgs = [{"role": "system", "content": SYSTEM_PROMPT_AR}]
     for q, a in history:
         msgs += [{"role": "user", "content": q}, {"role": "assistant", "content": a}]
     msgs.append({"role": "user", "content": f"المصادر:\n{sources}\n\nالسؤال: {question}{reminder}"})
+    return msgs
+
+
+def _generate(question: str, sources: str, history, model, reminder: str = "") -> str:
+    msgs = _messages(question, sources, history, reminder)
     return normalize_display(llm.chat(msgs, model=model, max_tokens=CONFIG["max_answer_tokens"]))
+
+
+def _generate_stream(question: str, sources: str, history, model):
+    """Yields ("token", piece) while the model writes; returns the full normalized text (use with `yield from`)."""
+    parts = []
+    for piece in llm.chat_stream(_messages(question, sources, history), model=model,
+                                 max_tokens=CONFIG["max_answer_tokens"]):
+        if piece:
+            parts.append(piece)
+            yield "token", piece
+    return normalize_display(re.sub(r"<think>.*?</think>", "", "".join(parts), flags=re.S))
 
 
 def _clean_citations(text: str, n_sources: int) -> str:
@@ -135,10 +167,27 @@ def _guard_numbers(text, question, sources, n_sources, history, model, arabic, f
 def answer(question: str, thread_id: str = "default", model: str | None = None, use_history: bool = True,
            rerank: bool | None = None, rewrite: bool | None = None, sources: list[str] | None = None,
            history: list[tuple[str, str]] | None = None) -> dict:
-    """Full pipeline. Returns {"answer", "sources": [{n, file, page, section, text}], "question", "standalone",
-    "msa", "flags": [...], "timings": {...}}.
+    """Full pipeline. Returns {"answer", "sources": [{n, file, page, section, text, chunk}], "question",
+    "standalone", "msa", "flags": [...], "timings": {...}}.
     sources: limit the search to these file names. history: (question, answer) pairs kept by the caller
     (e.g. the web UI) - replaces the server-side memory of `thread_id`."""
+    for kind, val in _run(question, thread_id, model, use_history, rerank, rewrite, sources, history, stream=False):
+        if kind == "done":
+            return val
+
+
+def answer_stream(question: str, thread_id: str = "default", model: str | None = None, use_history: bool = True,
+                  rerank: bool | None = None, rewrite: bool | None = None, sources: list[str] | None = None,
+                  history: list[tuple[str, str]] | None = None):
+    """Same pipeline as answer(), as events:
+        ("retrieved", res)   sources are known (res["sources"]), before the LLM runs
+        ("token", piece)     the first draft as the model writes it
+        ("done", res)        the checked answer (citations / numbers / refusal guards applied) - it can differ
+                             from the streamed draft, so show res["answer"] in the end."""
+    yield from _run(question, thread_id, model, use_history, rerank, rewrite, sources, history, stream=True)
+
+
+def _run(question, thread_id, model, use_history, rerank, rewrite, sources, history, stream):
     t0 = time.time()
     model = model or llm.MODEL
     if history is not None:
@@ -168,16 +217,20 @@ def answer(question: str, thread_id: str = "default", model: str | None = None, 
         res.update(answer=refusal, sources=[])
         res["flags"].append("no_hits" if not hits else "below_similarity")
     else:
+        yield "retrieved", res
         sources = _sources_block(hits)
-        text = _generate(standalone, sources, list(hist), model)
+        if stream:
+            text = yield from _generate_stream(standalone, sources, list(hist), model)
+        else:
+            text = _generate(standalone, sources, list(hist), model)
         if not _CITE.search(text) and not is_refusal(text) and CONFIG["retry_missing_citation"]:
             res["flags"].append("retry_no_citation")
             text = _generate(standalone, sources, list(hist), model,
                              "\n\nتذكير: اذكر رقم المصدر بعد كل معلومة مثل [1]، أو أجب بجملة عدم العثور على المعلومة.")
         text = _clean_citations(text, len(hits))
         text = _guard_numbers(text, standalone, sources, len(hits), list(hist), model, arabic, res["flags"])
-        if is_refusal(text) and _CITE.search(text):      # a cited answer with a stray "not found" line appended
-            text = normalize_display(text.replace(REFUSAL_AR, "").replace(REFUSAL_EN, ""))
+        if is_refusal(text) and _CITE.search(text):      # a cited answer with a stray "not found" sentence
+            text = strip_refusal(text)
             res["flags"].append("stripped_refusal")
         if is_refusal(text):
             res["sources"] = []
@@ -188,7 +241,7 @@ def answer(question: str, thread_id: str = "default", model: str | None = None, 
     res["msa"] = llm.rewrite_to_msa(standalone, model) if rewrite_on and arabic else None
     res["timings"] = {"followup": round(t1 - t0, 2), "retrieve": round(t2 - t1, 2),
                       "generate": round(time.time() - t2, 2), "total": round(time.time() - t0, 2)}
-    return res
+    yield "done", res
 
 
 def reset(thread_id: str | None = None):
