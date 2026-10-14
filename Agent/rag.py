@@ -11,7 +11,6 @@ import logging
 import re
 import time
 from collections import deque
-from functools import lru_cache
 
 from DB.arabic import is_arabic, normalize_display
 from DB.pipeline import Pipeline
@@ -41,9 +40,8 @@ _SENTENCE = re.compile(r"(?<=[.!?؟])\s+")
 _history: dict[str, deque] = {}
 
 
-@lru_cache(maxsize=1)
 def db() -> Pipeline:
-    return Pipeline()
+    return Pipeline.shared()
 
 
 def is_refusal(text: str) -> bool:

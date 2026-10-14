@@ -9,6 +9,7 @@ import hashlib
 import json
 import re
 import threading
+from contextlib import asynccontextmanager
 from functools import lru_cache
 from pathlib import Path
 
@@ -18,6 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from Agent import llm, rag
+from Agent.context import NAME
 from DB.arabic import is_arabic, normalize_search, tokens
 from DB.parse import PAGE_RE, Parser
 
@@ -29,7 +31,14 @@ LIB_PATH = ROOT / "data/library.json"
 SUPPORTED = Parser.MARKER_EXT | Parser.OFFICE_EXT | Parser.PLAIN_EXT
 LOCK = threading.Lock()                       # one library write / re-index at a time
 
-app = FastAPI(title="Yoth AI")
+@asynccontextmanager
+async def lifespan(_app):
+    from Agent.voice import check_voices
+    check_voices()                            # clear warning at startup when Arabic answers can't be spoken
+    yield
+
+
+app = FastAPI(title=NAME, lifespan=lifespan)
 
 
 # ================================================================ library
@@ -297,8 +306,9 @@ def chat(req: ChatIn):
             if _CASUAL.match(normalize_search(q)):
                 ar = is_arabic(q)
                 reply = llm.chat([
-                    {"role": "system", "content": "You are Yoth AI, a friendly assistant for government-service "
-                     "documents. Reply briefly and warmly to this greeting, in " + ("Arabic." if ar else "English.")},
+                    {"role": "system", "content": f"You are {NAME}, a friendly government-services assistant that "
+                     "answers from official documents. Reply briefly and warmly to this greeting, in "
+                     + ("Arabic." if ar else "English.")},
                     {"role": "user", "content": q}], max_tokens=80)
                 yield _line({"type": "token", "text": reply})
                 yield _line({"type": "done", "mode": "chat"})
@@ -341,11 +351,12 @@ def stt(audio: UploadFile = File(...), language: str = Form("auto")):
 
 @app.post("/api/tts")
 def tts(body: TTSIn):
-    """Text -> wav. Header X-TTS-Engine says which engine produced it."""
+    """Text -> wav. Header X-TTS-Engine says which engine produced it; 204 with X-TTS-Engine: no-arabic-voice
+    when the text is Arabic and no Arabic voice is installed."""
     from Agent.voice import synthesize
     wav, engine, _ = synthesize(body.text, body.language)
     if not wav:
-        return Response(status_code=204)
+        return Response(status_code=204, headers={"X-TTS-Engine": engine})
     return Response(wav, media_type="audio/wav", headers={"X-TTS-Engine": engine})
 
 

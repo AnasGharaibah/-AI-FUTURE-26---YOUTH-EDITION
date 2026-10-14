@@ -4,7 +4,6 @@ import datetime as dt
 import operator
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeout
-from functools import lru_cache
 from pathlib import Path
 
 from langchain_core.tools import tool
@@ -14,15 +13,14 @@ from DB.pipeline import Pipeline
 ROOT = Path(__file__).resolve().parent.parent
 
 
-@lru_cache(maxsize=1)
 def _db() -> Pipeline:
-    return Pipeline()
+    return Pipeline.shared()                  # same instance as Agent.rag: one Chroma client, one BM25 index
 
 
 @tool
 def search_documents(query: str) -> str:
-    """Search the company documents (policies, employee handbook, IT FAQ, board update).
-    Use for any question about rules, limits, benefits, procedures or IT help.
+    """Search the official government documents (service guides, regulations, FAQs; Arabic and English).
+    Use for any question about a service: fees, required documents, steps, durations, eligibility or articles.
     Returns numbered sources with file names."""
     text, hits = _db().context(query)
     return text if hits else "No relevant documents found."
@@ -30,8 +28,9 @@ def search_documents(query: str) -> str:
 
 @tool
 def query_projects(status: str = "", manager: str = "", client: str = "") -> str:
-    """Look up projects in the projects spreadsheet. All filters are optional, case-insensitive
-    'contains' matches. status is e.g. Active, Completed, On hold. Returns a table with budgets in JOD."""
+    """Look up projects in the projects register spreadsheet (project, client, manager, budget, status).
+    All filters are optional, case-insensitive 'contains' matches. status is e.g. Active, Completed, On hold.
+    Returns a table with budgets in JOD."""
     import pandas as pd
     df = pd.read_excel(ROOT / "data/raw/projects.xlsx")
     for col, val in (("Status", status), ("Manager", manager), ("Client", client)):

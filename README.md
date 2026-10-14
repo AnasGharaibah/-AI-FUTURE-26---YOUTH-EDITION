@@ -27,8 +27,10 @@ Speak Arabic or English, hear the answer. 100% local.
 
 **STT** – macOS: `mlx-whisper`; Windows/Linux: [OpenAI Whisper](https://github.com/openai/whisper) (`turbo`,
 downloaded on first use, ~1.6 GB; audio is decoded with PyAV, so no ffmpeg install is needed).
-**TTS** – macOS `say` (Majed / Samantha); Windows: the built-in voice. For Arabic speech on Windows add an Arabic voice
-in **Settings → Time & language → Speech**, otherwise the default voice is used.
+**TTS** – macOS `say` (Majed for Arabic); Windows speech voices (Hoda / Naayf for Arabic, via the WinRT speech API).
+Arabic is never read by an English voice: without an Arabic voice, Arabic answers are shown but not spoken, and a
+warning is printed at startup. Add one in **Settings → Time & language → Speech** (Windows) or **System Settings →
+Accessibility → Spoken Content → Manage Voices** (macOS).
 
 ```bash
 uv run python -m Agent.main --voice       # terminal voice chat (--lang en | auto for mixed speech)
@@ -38,7 +40,7 @@ Speak after "listening…"; the question is sent after ~1.2 s of silence. Ctrl+C
 ```python
 from Agent.voice import listen, transcribe, speak
 transcribe("q.wav", language=None)       # {"text", "language", "seconds"}
-speak("The limit is 150 JOD [1].")       # -> "say" | "sapi"
+speak("The limit is 150 JOD [1].")       # -> "say" | "windows" | "no-arabic-voice"
 ```
 All settings (models, language, silence threshold, spoken length) are in `CONFIG` at the top of `Agent/voice.py`.
 

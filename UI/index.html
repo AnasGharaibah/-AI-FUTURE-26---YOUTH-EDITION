@@ -776,6 +776,10 @@ async function speakText(text,onDone){
   try{
     const r=await fetch('/api/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})});
     if(my!==speakToken)return;
+    if(r.headers.get('X-TTS-Engine')==='no-arabic-voice'&&!speakText.warned){
+      speakText.warned=true;
+      toast(local('Arabic answers are not read aloud: no Arabic voice is installed on the server (Windows: Settings › Time & language › Speech).','لا تُقرأ الإجابات العربية بصوت: لا يوجد صوت عربي مثبت على الخادم (ويندوز: الإعدادات › الوقت واللغة › الكلام).'));
+    }
     if(!r.ok||r.status===204){finish();return}
     const url=URL.createObjectURL(await r.blob());
     if(my!==speakToken){URL.revokeObjectURL(url);return}

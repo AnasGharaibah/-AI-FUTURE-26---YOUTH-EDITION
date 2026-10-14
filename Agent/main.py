@@ -5,12 +5,13 @@ import argparse
 import uuid
 
 from .brain import MODEL, ask, stream
+from .context import NAME
 
 
 def voice(lang: str | None):
     from .voice import voice_loop
     thread = uuid.uuid4().hex
-    print(f"Yoth AI ({MODEL}) - voice mode")
+    print(f"{NAME} ({MODEL}) - voice mode")
     voice_loop(lambda q: ask(q, thread), lang)
 
 
@@ -23,7 +24,7 @@ def main():
         return voice(None if args.lang == "auto" else args.lang)
 
     thread = uuid.uuid4().hex
-    print(f"Yoth AI ({MODEL}) - type 'exit' to quit\n")
+    print(f"{NAME} ({MODEL}) - type 'exit' to quit\n")
     while True:
         try:
             q = input("you> ").strip()

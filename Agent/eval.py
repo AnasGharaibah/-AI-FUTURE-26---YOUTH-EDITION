@@ -48,7 +48,7 @@ def load_runner(args):
     if args.legacy:                                   # old tool-calling agent + old DB (baseline snapshot)
         from Agent.brain import MODEL, ask
         from DB.pipeline import Pipeline
-        db = Pipeline()
+        db = Pipeline.shared()
 
         def run(q, thread):
             hits = db.search(q)
@@ -129,7 +129,7 @@ def retrieval_only(args, rdir):
     """Does the right FILE come first? hit@1/@3/@5 + MRR over the answerable questions. Follow-ups are skipped
     (they need the LLM). No rewrite unless --rewrite-llm... keeps RAM free for the reranker test."""
     from DB.pipeline import Pipeline
-    db = Pipeline()
+    db = Pipeline.shared()
     with open(args.csv, encoding="utf-8") as fh:
         rows = [r for r in csv.DictReader(fh) if r["source"] and r["type"] != "followup"]
     if not rows:

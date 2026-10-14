@@ -1,10 +1,11 @@
 """Voice in/out.   STT: mlx-whisper (Apple Silicon) / OpenAI Whisper (Windows, Linux).
-TTS: macOS `say` / Windows SAPI.
+TTS: macOS `say` (Majed for Arabic) / Windows speech voices (Hoda / Naayf for Arabic). Arabic is not spoken
+when no Arabic voice is installed (check_voices() warns at startup).
 
     from Agent.voice import listen, transcribe, speak
     listen(seconds=None, language="ar")      # mic -> {"text", "language", "seconds"}  (stops on silence)
     transcribe("q.wav", language=None)       # file / numpy array
-    speak("مرحبا", block=True)               # -> engine used: "say" | "sapi"
+    speak("مرحبا", block=True)               # -> engine used: "say" | "windows" | "no-arabic-voice" | "none"
 """
 import io
 import logging
@@ -118,6 +119,7 @@ def _decode_av(src) -> np.ndarray:
     return np.concatenate(out).astype(np.float32) if out else np.zeros(0, dtype=np.float32)
 
 
+# TODO(#14): two concurrent first requests can both load the model (lru_cache is not a lock) - guard with a Lock.
 @lru_cache(maxsize=1)
 def _whisper():
     """OpenAI Whisper (github.com/openai/whisper). The model is downloaded on first use (turbo: ~1.6 GB)."""
@@ -278,41 +280,112 @@ def _play_wav(path: str, block: bool):
         threading.Thread(target=run, daemon=True).start()
 
 
-_SAPI_PS = """
-Add-Type -AssemblyName System.Speech
-$s = New-Object System.Speech.Synthesis.SpeechSynthesizer
-$v = $s.GetInstalledVoices() | Where-Object { $_.Enabled -and $_.VoiceInfo.Culture.TwoLetterISOLanguageName -eq $env:YOTH_TTS_LANG } | Select-Object -First 1
-if ($v) { $s.SelectVoice($v.VoiceInfo.Name) }
-$s.SetOutputToWaveFile($env:YOTH_TTS_OUT)
-$s.Speak([IO.File]::ReadAllText($env:YOTH_TTS_IN, [Text.Encoding]::UTF8))
-$s.Dispose()
+# Windows: the WinRT speech API (Windows.Media.SpeechSynthesis). Unlike the old System.Speech it can use the voices
+# added in Settings > Time & language > Speech (Arabic: Hoda, Naayf, ...).
+_WINDOWS_TTS_PS = r"""
+Add-Type -AssemblyName System.Runtime.WindowsRuntime
+$null = [Windows.Media.SpeechSynthesis.SpeechSynthesizer, Windows.Media.SpeechSynthesis, ContentType = WindowsRuntime]
+$null = [Windows.Storage.Streams.DataReader, Windows.Storage.Streams, ContentType = WindowsRuntime]
+$asTask = [System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object {
+    $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1' } | Select-Object -First 1
+function Await($op, [Type]$type) { $t = $asTask.MakeGenericMethod($type).Invoke($null, @($op)); $null = $t.Wait(-1); $t.Result }
+if ($env:YOTH_TTS_LIST) {
+    [Windows.Media.SpeechSynthesis.SpeechSynthesizer]::AllVoices | ForEach-Object { $_.Language + '|' + $_.DisplayName }
+    return
+}
+$s = New-Object Windows.Media.SpeechSynthesis.SpeechSynthesizer
+$v = [Windows.Media.SpeechSynthesis.SpeechSynthesizer]::AllVoices | Where-Object { $_.Language -like "$($env:YOTH_TTS_LANG)*" } | Select-Object -First 1
+if ($v) { $s.Voice = $v }
+$text = [IO.File]::ReadAllText($env:YOTH_TTS_IN, [Text.Encoding]::UTF8)
+$stream = Await ($s.SynthesizeTextToStreamAsync($text)) ([Windows.Media.SpeechSynthesis.SpeechSynthesisStream])
+$reader = New-Object Windows.Storage.Streams.DataReader($stream.GetInputStreamAt(0))
+$size = [uint32]$stream.Size
+$null = Await ($reader.LoadAsync($size)) ([uint32])
+$bytes = New-Object byte[] $size
+$reader.ReadBytes($bytes)
+[IO.File]::WriteAllBytes($env:YOTH_TTS_OUT, $bytes)
 """
 
 
-def _sapi(text: str, lang: str) -> bytes:
-    """Windows built-in voice (System.Speech). Uses an installed voice for `lang` when there is one
-    (Arabic: Settings > Time & language > Speech > Add voices), else the default voice."""
+def _powershell(script: str, **env) -> str:
+    """Run a PowerShell script from a temp .ps1 file (passed inline with -Command, the WinRT awaits hang)."""
     import os
     with tempfile.TemporaryDirectory() as d:
-        src, wav = Path(d) / "in.txt", Path(d) / "out.wav"
-        src.write_text(text, encoding="utf-8")
-        env = {**os.environ, "YOTH_TTS_LANG": lang, "YOTH_TTS_IN": str(src), "YOTH_TTS_OUT": str(wav)}
-        subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", _SAPI_PS],
-                       env=env, check=True, capture_output=True)
-        return wav.read_bytes()
+        ps1 = Path(d) / "script.ps1"
+        ps1.write_text(script, encoding="utf-8-sig")              # BOM: PowerShell 5.1 reads the file as UTF-8
+        return subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+                               "-File", str(ps1)], env={**os.environ, **env}, check=True, capture_output=True,
+                              stdin=subprocess.DEVNULL, timeout=60, encoding="utf-8", errors="replace").stdout
+
+
+@lru_cache(maxsize=1)
+def installed_voices() -> dict[str, list[str]] | None:
+    """System TTS voices by language: {"ar": ["Microsoft Naayf", ...], "en": [...]}; None when they can't be listed."""
+    voices: dict[str, list[str]] = {}
+    try:
+        if sys.platform == "win32":
+            for line in _powershell(_WINDOWS_TTS_PS, YOTH_TTS_LIST="1").splitlines():
+                lang, _, name = line.strip().partition("|")
+                if name:
+                    voices.setdefault(lang[:2].lower(), []).append(name)
+        elif IS_MAC:
+            out = subprocess.run(["say", "-v", "?"], capture_output=True, text=True, timeout=10).stdout
+            for line in out.splitlines():                  # "Majed               ar_001    # ..."
+                m = re.match(r"(.+?)\s+([a-z]{2})[_-]\w+\s+#", line)
+                if m:
+                    voices.setdefault(m.group(2), []).append(m.group(1).strip())
+    except Exception as e:
+        log.warning("could not list TTS voices: %s", e)
+        return None
+    return voices
+
+
+def has_voice(lang: str) -> bool:
+    """True when a voice for `lang` is installed - or when the voices can't be listed (then just try)."""
+    voices = installed_voices()
+    return voices is None or bool(voices.get(lang))
+
+
+def check_voices() -> bool:
+    """Print a clear warning when no Arabic TTS voice is installed (Arabic answers will then not be spoken).
+    Returns True when an Arabic voice exists (or the voices can't be listed)."""
+    if has_voice("ar"):
+        return True
+    how = ("Settings > Time & language > Speech > Add voices > Arabic" if sys.platform == "win32"
+           else "System Settings > Accessibility > Spoken Content > System voice > Manage Voices > Arabic (Majed)")
+    print(f"WARNING: no Arabic text-to-speech voice is installed - Arabic answers will be shown but not spoken.\n"
+          f"         Add one in {how}, then restart.")
+    return False
+
+
+def _say_voice(lang: str) -> str | None:
+    """macOS voice for `lang`: the configured one (Majed / Samantha) when installed, else any voice of that language."""
+    preferred, voices = CONFIG["say_voices"].get(lang), installed_voices()
+    if voices is None:                                     # unknown: trust the configured voice
+        return preferred
+    names = voices.get(lang, [])
+    return preferred if preferred in names else (names[0] if names else None)
 
 
 def synthesize(text: str, language: str | None = None, clean: bool = True):
-    """text -> (wav_bytes | None, engine, spoken_text). `say` output is converted to wav."""
+    """text -> (wav_bytes | None, engine, spoken_text). Arabic text is NOT spoken when no Arabic voice is installed
+    (an English voice reading Arabic is unintelligible): returns (None, "no-arabic-voice", spoken)."""
     spoken = clean_text(text) if clean else text.strip()
     if not spoken:
         return None, "none", ""
     lang = language or detect_language(spoken)
-    if sys.platform == "win32":
-        return _sapi(spoken, lang), "sapi", spoken
+    if lang == "ar" and not has_voice("ar"):
+        log.warning("no Arabic TTS voice installed - not speaking: %r", spoken[:60])
+        return None, "no-arabic-voice", spoken
     with tempfile.TemporaryDirectory() as d:
+        if sys.platform == "win32":
+            src, wav = Path(d) / "in.txt", Path(d) / "out.wav"
+            src.write_text(spoken, encoding="utf-8")
+            _powershell(_WINDOWS_TTS_PS, YOTH_TTS_LANG=lang, YOTH_TTS_IN=str(src), YOTH_TTS_OUT=str(wav))
+            return wav.read_bytes(), "windows", spoken
         aiff, wav = f"{d}/o.aiff", f"{d}/o.wav"
-        subprocess.run(["say", "-v", CONFIG["say_voices"][lang], "-o", aiff, spoken], check=True)
+        voice = _say_voice(lang)
+        subprocess.run(["say", *(["-v", voice] if voice else []), "-o", aiff, spoken], check=True)
         subprocess.run(["afconvert", "-f", "WAVE", "-d", "LEI16@22050", aiff, wav], check=True)
         return Path(wav).read_bytes(), "say", spoken
 
@@ -326,7 +399,9 @@ def speak(text: str, language: str | None = None, block: bool = True, save_to: s
         log.error("TTS failed: %s", e)
         return "none"
     if wav is None:
-        return "none"
+        if engine == "no-arabic-voice":
+            print("   [tts: skipped - no Arabic voice installed]")
+        return engine
     log.info("TTS engine: %s | %r", engine, spoken)
     print(f"   [tts: {engine}]")
     path = save_to or tempfile.NamedTemporaryFile(suffix=".wav", delete=False).name
@@ -339,6 +414,7 @@ def speak(text: str, language: str | None = None, block: bool = True, save_to: s
 def voice_loop(answer_fn, language: str | None = CONFIG["stt_language"]):
     """listen -> answer_fn(text) -> print answer -> speak it. Ctrl+C at the prompt exits.
     answer_fn(text) -> str (full answer, with sources)."""
+    check_voices()
     print("Voice mode - speak after the prompt, pause to send. Ctrl+C to quit.\n")
     while True:
         try:

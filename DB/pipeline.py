@@ -8,6 +8,7 @@ Usage (from Agent/ or api.py):
     context, hits = db.context("...")            # numbered sources for the LLM prompt
 """
 import json
+import threading
 import time
 from pathlib import Path
 
@@ -35,6 +36,9 @@ DEFAULTS = {
     "rewriter": None,                        # callable(question) -> MSA question; None = Agent.llm.rewrite_to_msa
     "schema": 2,                             # bump when chunking/normalisation changes -> forces a re-index
 }
+
+_SHARED = None                               # see Pipeline.shared()
+_SHARED_LOCK = threading.Lock()
 
 
 class Pipeline:
@@ -147,6 +151,16 @@ class Pipeline:
                 if p and ntok(p["text"]) <= self.cfg["parent_max_tokens"]:
                     h["context"] = p["text"]        # whole (small) section
         return hits
+
+    @staticmethod
+    def shared() -> "Pipeline":
+        """The one Pipeline of this process (one Chroma client, one BM25 index), created on first use.
+        Agent.rag, Agent.tools and api.py all use it."""
+        global _SHARED
+        with _SHARED_LOCK:
+            if _SHARED is None:
+                _SHARED = Pipeline()
+            return _SHARED
 
     @staticmethod
     def cite(h) -> str:
