@@ -267,11 +267,86 @@ def _locate(page: str, chunk: str) -> tuple[int, int]:
     return start, end
 
 
-def _source(s: dict) -> dict:
-    """quote = exactly the evidence the LLM saw for [n]; start/end highlight the matched chunk in the page."""
+_CITE_N = re.compile(r"\[(\d+)\]")
+_LIST_NUM = re.compile(r"(?m)^\s*\d+\s*[.)\-–]\s*")
+_SENT_END = re.compile(r"(?<=[^\d\s][.!؟?])\s+")          # sentence end, but not the dot of "1." in a list
+
+
+def _page_lines(page: str, start: int, end: int):
+    """(start, end) of the lines in page[start:end]: split at line breaks, long lines also at sentence ends."""
+    pos = start
+    for raw in page[start:end].split("\n"):
+        offset = 0
+        for part in _SENT_END.split(raw):
+            i = raw.find(part, offset)
+            seg = part.strip()
+            if len(seg) >= 8:
+                a = pos + i + (len(part) - len(part.lstrip()))
+                yield a, a + len(seg)
+            offset = i + len(part)
+        pos += len(raw) + 1
+
+
+HIGHLIGHT_MAX_CHARS = 600
+HIGHLIGHT_GAP = 200                       # matched lines this close belong to one highlighted passage
+# "هذه الشروط مذكورة في وثيقة ... [1]": a remark naming the document, not a fact (list items never count as remarks;
+# "حسب" alone is not enough - "(حسب الضرورة)" ends many real list items)
+_DOC_REMARK = re.compile(r"^(?!\s*\d+\s*[.)\-–]).*(وثيقة|الوثيقة|مستند|المستند|المصدر|\.txt|\.pdf|\.docx|"
+                         r"according to the|the document)")
+
+
+def best_line(page: str, start: int, end: int, answer: str, n: int) -> tuple[int, int]:
+    """The referenced text inside the chunk span: every answer sentence citing [n] is matched to its best line
+    (shared words); the highlight runs from the first to the last matched line when they are close together
+    (a cited list), else it is the strongest line. The whole chunk when nothing matches."""
+    lines = [(a, b, set(tokens(_LIST_NUM.sub("", page[a:b])))) for a, b in _page_lines(page, start, end)]
+
+    def best_for(sent):
+        sent = _LIST_NUM.sub("", _CITE_N.sub(" ", sent))   # list numbers "1." are not facts
+        want = set(tokens(sent))
+        nums = set(re.findall(r"\d+", sent))
+        if not want:
+            return 0, None
+        # shared words, plus a bonus when the line has the same number (fees / durations are what gets cited)
+        return max(((len(want & toks) / len(want) + (0.5 if nums & toks else 0), (a, b)) for a, b, toks in lines),
+                   default=(0, None))
+
+    sentences = [x for x in re.split(r"(?<=[^\d\s][.!؟?])\s+|\n+", answer) if _CITE_N.sub("", x).strip()]
+    # the sentences citing [n]; when they are only a remark about the document ("هذه الشروط مذكورة في وثيقة ... [1]")
+    # or none has words of its own, the citation covers the whole answer: every sentence, each matched on its own
+    facts = [x for x in sentences if not _DOC_REMARK.search(x)] or sentences
+    cited = [x for x in facts if f"[{n}]" in x] or facts
+    matched = []                                      # (score, line) - the best line per sentence
+    for sent in cited:
+        score, line = best_for(sent)
+        if line and score >= 0.5:
+            matched.append((score, line))
+    if not matched:                                   # no line supports the answer: never highlight a whole page
+        return (start, end) if end - start <= HIGHLIGHT_MAX_CHARS else (0, 0)
+    # group matched lines that are close together; the highlight is the group most sentences point to (a cited
+    # list), not one stray line elsewhere on the page
+    groups = []
+    for score, (a, b) in sorted(matched, key=lambda m: m[1]):
+        if groups and a - groups[-1]["end"] <= HIGHLIGHT_GAP:
+            g = groups[-1]
+            g["end"], g["n"], g["score"] = max(g["end"], b), g["n"] + 1, g["score"] + score
+        else:
+            groups.append({"start": a, "end": b, "n": 1, "score": score})
+    g = max(groups, key=lambda g: (g["n"], g["score"]))
+    return g["start"], g["end"]
+
+
+def _source(s: dict, answer: str | None = None) -> dict:
+    """quote = exactly the evidence the LLM saw for [n]; start/end highlight the matched chunk in the page - or,
+    once the answer is known, the line in it that supports the answer."""
     name, page = s["file"], s.get("page") or 1
     ps = pages(name)
     start, end = _locate(ps[page - 1], s.get("chunk") or s["text"]) if 1 <= page <= len(ps) else (0, 0)
+    if answer and 1 <= page <= len(ps):
+        # look in everything the model saw for [n] (the whole section when it was expanded), not only the chunk
+        a, b = _locate(ps[page - 1], s["text"])
+        region = (min(a, start), max(b, end)) if b > a else (start, end) if end > start else (0, len(ps[page - 1]))
+        start, end = best_line(ps[page - 1], *region, answer, s["n"])
     return {"n": s["n"], "doc_id": doc_id(name), "file": name, "page": page, "section": s.get("section") or "",
             "start": start, "end": end, "quote": s["text"]}
 
@@ -336,6 +411,7 @@ def chat(req: ChatIn):
                 yield _line({"type": "not_found", "text": r["answer"]})
                 yield _line({"type": "done", "mode": "documents", "found": False})
                 return
+            yield _line({"type": "sources", "sources": [_source(s, r["answer"]) for s in r["sources"]]})
             yield _line({"type": "final", "text": r["answer"]})
             yield _line({"type": "verification", "items": _verify(r["answer"], r["sources"])})
             yield _line({"type": "done", "mode": "documents", "found": True})
@@ -363,7 +439,7 @@ def _agent_events(q: str, scope: list[str] | None, history: list[tuple[str, str]
         yield _line({"type": "not_found", "text": r["answer"]})
         yield _line({"type": "done", "mode": "documents", "found": False})
         return
-    yield _line({"type": "sources", "sources": [_source(s) for s in r["sources"]]})
+    yield _line({"type": "sources", "sources": [_source(s, r["answer"]) for s in r["sources"]]})
     yield _line({"type": "final", "text": r["answer"]})
     yield _line({"type": "verification", "items": _verify(r["answer"], r["sources"])})
     yield _line({"type": "done", "mode": "documents", "found": True})
