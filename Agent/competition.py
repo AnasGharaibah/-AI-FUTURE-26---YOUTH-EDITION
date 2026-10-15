@@ -116,6 +116,12 @@ def cited_numbers(text: str, n: int) -> list[int]:
     return out
 
 
+def renumber_citations(text: str, cites: list[int]) -> str:
+    """[7] [2, 9] -> [1] [2][3] following the order of `cites`, so source n of a UI answer is cites[n - 1]."""
+    new = {old: i for i, old in enumerate(cites, 1)}
+    return _CITE.sub(lambda m: "".join(f"[{new[i]}]" for i in cited_numbers(m.group(0), 10 ** 6) if i in new), text)
+
+
 def strip_citations(text: str) -> str:
     text = _CITE.sub("", text)
     text = re.sub(r"[ \t]+([.,،؛:؟?!)])", r"\1", text)
@@ -333,8 +339,22 @@ class Chat:
         self.model = model
         self.history: list[tuple[str, str]] = []           # (question, answer)
         self.prev_services: list[str] = []
+        self.last_cited: str | None = None                  # last answer with [n] renumbered over last_sources
+        self.last_sources: list[dict] = []
+
+    def restore(self, pairs: list[tuple[str, str]]):
+        """Continue a conversation kept elsewhere (the web UI sends its history with every request)."""
+        for q, a in pairs:
+            q = fix_typos(normalize_display(q))
+            self.history.append((q, strip_citations(a)))
+            services = router.lexicon(q).services
+            if services:
+                self.prev_services = services
 
     def ask(self, question: str) -> dict:
+        """-> {"answer", "contexts", "debug", "cited_answer" (with [n] for the UI), "sources" (the cited snippets,
+        source n = sources[n - 1])}"""
+        self.last_cited, self.last_sources = None, []
         t0 = time.time()
         q = fix_typos(normalize_display(question))
         r = router.route(q, self.history[-HISTORY_TURNS:], self.prev_services, self.model)
@@ -353,7 +373,9 @@ class Chat:
             self.prev_services = r.services
         self.history.append((q, ans))
         dbg["seconds"] = round(time.time() - t0, 2)
-        return {"answer": ans, "contexts": contexts, "debug": dbg}
+        sources = self.last_sources if contexts else []
+        return {"answer": ans, "contexts": contexts, "debug": dbg,
+                "cited_answer": self.last_cited if sources else ans, "sources": sources}
 
     def _earlier(self, services: list[str]) -> list[tuple[str, str]]:
         """Earlier turns of this chat about the same document(s) - the user's situation lives there
@@ -426,5 +448,7 @@ class Chat:
                 cites = cited_numbers(text, len(snips)) or cites
         contexts = list(dict.fromkeys(context_text(snips[i - 1]) for i in cites))
         text = ask_missing(text, [snips[i - 1] for i in cites], set(hint_map))
+        self.last_cited = renumber_citations(text, cites)               # for the web UI: clickable [n]
+        self.last_sources = [snips[i - 1] for i in cites]
         answer = text if KEEP_CITATIONS else strip_citations(text)
         return answer, contexts

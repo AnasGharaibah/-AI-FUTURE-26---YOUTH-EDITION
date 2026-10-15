@@ -208,15 +208,22 @@ tests/                  unit tests (test_competition.py for this pipeline)
 
 ## Web app, voice and general document search
 
-The repo also has an interactive app built on a general RAG pipeline (vector + BM25 search over any documents in
-`data/raw/`). The competition run does not use it.
-
 ```bash
 uv sync                                   # Python env (Windows without uv on PATH: py -m uv sync)
-ollama pull bge-m3                        # embeddings for the search index
-uv run python -m DB.main ingest           # parse + index data/raw   (--force to rebuild)
 uv run uvicorn api:app                    # web app on http://127.0.0.1:8000
-uv run python -m Agent.main               # terminal chat   (--voice for voice)
+```
+
+The web chat uses **the same competition pipeline** as `main.py` (same model, router, guards, memory). The answer
+arrives once it is checked (not word by word). Each `[n]` is clickable and opens the service file with the cited
+field highlighted. The browser keeps the conversation, so follow-ups work. No ingest is needed: the viewer shows
+the `.txt` service files as they are.
+
+`YOTH_MODE=agent` or `YOTH_MODE=rag` switches the chat back to the older general pipelines. These do vector + BM25
+search over any documents in `data/raw/`, and need `ollama pull bge-m3` and
+`uv run python -m DB.main ingest`.
+
+```bash
+uv run python -m Agent.main               # terminal chat of the older pipelines   (--voice for voice)
 ```
 
 - **Web app:** `api.py` serves `UI/`.
