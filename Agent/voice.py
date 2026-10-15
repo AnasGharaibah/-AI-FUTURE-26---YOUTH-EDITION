@@ -1,4 +1,4 @@
-"""Voice in/out.   STT: mlx-whisper (Apple Silicon) / OpenAI Whisper (Windows, Linux).
+"""Voice in/out.   STT: mlx-whisper (Apple Silicon) / faster-whisper on CUDA (Windows, Linux; CPU int8 fallback).
 TTS: macOS `say` (Majed for Arabic) / Windows speech voices (Hoda / Naayf for Arabic). Arabic is not spoken
 when no Arabic voice is installed (check_voices() warns at startup).
 
@@ -30,8 +30,10 @@ IS_MAC = sys.platform == "darwin"
 CONFIG = {
     # --- STT
     "stt_model": "mlx-community/whisper-large-v3-turbo",      # light option: mlx-community/whisper-small-mlx
-    "whisper_model": "turbo",                                  # OpenAI Whisper (non-Mac); faster on CPU: "small" / "base"
-    "whisper_device": "auto",                                  # "auto" | "cpu" | "cuda"
+    "whisper_model": "large-v3-turbo",                         # faster-whisper (Windows / Linux); light: "small"
+    "whisper_device": "auto",                                  # "auto" (cuda if available) | "cpu" | "cuda"
+    "whisper_compute_cuda": "float16",
+    "whisper_compute_cpu": "int8",
     "stt_language": "ar",                                      # "ar" | "en" | None (auto, mixed speech)
     "sample_rate": 16000,
     "silence_rms": 0.01,                                       # RMS below this counts as silence
@@ -120,16 +122,48 @@ def _decode_av(src) -> np.ndarray:
     return np.concatenate(out).astype(np.float32) if out else np.zeros(0, dtype=np.float32)
 
 
+def cuda_device() -> str:
+    """"cuda" when torch sees an NVIDIA GPU, else "cpu"."""
+    try:
+        import torch
+        return "cuda" if torch.cuda.is_available() else "cpu"
+    except Exception:
+        return "cpu"
+
+
+def _cuda_dlls():
+    """Windows: faster-whisper (CTranslate2) loads cuBLAS / cuDNN lazily from PATH; the CUDA build of torch ships
+    them in torch/lib, so put that folder on the DLL search path and PATH (else: "cublas64_12.dll is not found")."""
+    if sys.platform != "win32":
+        return
+    try:
+        import torch
+        lib = Path(torch.__file__).parent / "lib"
+        if lib.is_dir() and str(lib) not in os.environ.get("PATH", ""):
+            os.add_dll_directory(str(lib))
+            os.environ["PATH"] = str(lib) + os.pathsep + os.environ.get("PATH", "")
+    except Exception as e:
+        log.warning("could not add torch's CUDA libraries to the DLL path: %s", e)
+
+
 # TODO(#14): two concurrent first requests can both load the model (lru_cache is not a lock) - guard with a Lock.
 @lru_cache(maxsize=1)
 def _whisper():
-    """OpenAI Whisper (github.com/openai/whisper). The model is downloaded on first use (turbo: ~1.6 GB)."""
-    import whisper
+    """faster-whisper (large-v3-turbo). GPU: float16; CPU fallback: int8. Downloaded on first use (~1.6 GB)."""
     device = CONFIG["whisper_device"]
     if device == "auto":
-        import torch
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-    return whisper.load_model(CONFIG["whisper_model"], device=device)
+        device = cuda_device()
+    if device == "cuda":
+        _cuda_dlls()
+    from faster_whisper import WhisperModel
+    compute = CONFIG["whisper_compute_cuda"] if device == "cuda" else CONFIG["whisper_compute_cpu"]
+    try:
+        return WhisperModel(CONFIG["whisper_model"], device=device, compute_type=compute)
+    except Exception as e:
+        if device != "cuda":
+            raise
+        log.warning("Whisper on CUDA failed (%s) - using the CPU (int8)", e)
+        return WhisperModel(CONFIG["whisper_model"], device="cpu", compute_type=CONFIG["whisper_compute_cpu"])
 
 
 def _stt(data: np.ndarray, language: str | None) -> dict:
@@ -137,9 +171,9 @@ def _stt(data: np.ndarray, language: str | None) -> dict:
         import mlx_whisper
         return mlx_whisper.transcribe(data, path_or_hf_repo=CONFIG["stt_model"], language=language,
                                       task="transcribe", condition_on_previous_text=False, verbose=None)
-    model = _whisper()
-    return model.transcribe(data, language=language, task="transcribe", condition_on_previous_text=False,
-                            fp16=model.device.type == "cuda", verbose=None)
+    segments, info = _whisper().transcribe(data, language=language, task="transcribe",
+                                           condition_on_previous_text=False, vad_filter=True)
+    return {"text": " ".join(s.text.strip() for s in segments), "language": info.language}
 
 
 def transcribe(audio, language: str | None = "ar") -> dict:
@@ -341,7 +375,7 @@ def installed_voices() -> dict[str, list[str]] | None:
                 if name:
                     voices.setdefault(lang[:2].lower(), []).append(name)
         elif IS_MAC:
-            out = subprocess.run(["say", "-v", "?"], capture_output=True, text=True, timeout=10).stdout
+            out = subprocess.run(["say", "-v", "?"], capture_output=True, encoding="utf-8", errors="replace", timeout=10).stdout
             for line in out.splitlines():                  # "Majed               ar_001    # ..."
                 m = re.match(r"(.+?)\s+([a-z]{2})[_-]\w+\s+#", line)
                 if m:

@@ -162,7 +162,9 @@ class Parser:
             gc.collect()
             try:
                 import torch
-                if torch.backends.mps.is_available():
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                elif torch.backends.mps.is_available():
                     torch.mps.empty_cache()
             except Exception:
                 pass

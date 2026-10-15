@@ -28,7 +28,8 @@ DEFAULTS = {
     "chunk_algorithm": "structure",          # or "fixed"
     "top_k_retrieve": 20,                    # candidates from hybrid search
     "top_k_final": 5,                        # chunks given to the LLM
-    "use_reranker": False,                   # True = better ranking, ~2 GB more RAM
+    "use_reranker": "auto",                  # "auto" = on when an NVIDIA GPU has >= 8 GB (CUDA, fp16, ~1.1 GB)
+    "reranker_min_vram_gb": 8.0,
     "reranker_model": "BAAI/bge-reranker-v2-m3",
     "expand_parents": True,                  # give the LLM the whole section if small
     "parent_max_tokens": 700,
@@ -42,6 +43,15 @@ _SHARED = None                               # see Pipeline.shared()
 _SHARED_LOCK = threading.Lock()
 
 
+def gpu_vram_gb() -> float:
+    """Total memory of the first NVIDIA GPU in GB (decimal, as GPUs are sold: "8 GB" = 8.59), 0 without CUDA."""
+    try:
+        import torch
+        return torch.cuda.get_device_properties(0).total_memory / 1e9 if torch.cuda.is_available() else 0.0
+    except Exception:
+        return 0.0
+
+
 class Pipeline:
     def __init__(self, **overrides):
         self.cfg = {**DEFAULTS, **overrides}
@@ -52,6 +62,7 @@ class Pipeline:
         self.store = VectorStore(c["db_dir"])
         self.meta_path = Path(c["db_dir"]) / "index_meta.json"
         self._reranker = None
+        self._auto_rerank = None
 
     # ================================================================ ingest
     def _signature(self):
@@ -100,12 +111,21 @@ class Pipeline:
         return self.store.count()
 
     # ================================================================ search
+    def reranker_enabled(self) -> bool:
+        """use_reranker True/False, or "auto": on when torch sees an NVIDIA GPU with >= reranker_min_vram_gb."""
+        setting = self.cfg["use_reranker"]
+        if setting != "auto":
+            return bool(setting)
+        if self._auto_rerank is None:
+            self._auto_rerank = gpu_vram_gb() >= self.cfg["reranker_min_vram_gb"]
+        return self._auto_rerank
+
     def _rerank(self, query, hits):
         if self._reranker is None:
             from sentence_transformers import CrossEncoder
             import torch
-            dev = "mps" if torch.backends.mps.is_available() else "cpu"
-            kw = {"dtype": torch.float16} if dev == "mps" else {}       # half the RAM (1.1 GB instead of 2.2)
+            dev = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
+            kw = {"dtype": torch.float16} if dev != "cpu" else {}       # half the memory (1.1 GB instead of 2.2)
             self._reranker = CrossEncoder(self.cfg["reranker_model"], max_length=512, device=dev, model_kwargs=kw)
         # same "[file > section]" context line the embedder saw - otherwise identical-looking chunks of different services tie
         scores = self._reranker.predict([(query, f"{h['source']} > {h['section'] or '-'}\n{h['text']}") for h in hits])
@@ -132,7 +152,7 @@ class Pipeline:
         """Hybrid search over the question (+ its MSA rewrite), RRF-fused, optional rerank.
         sources: optional list of file names to limit the search to. Returns the best chunk dicts."""
         k = k or self.cfg["top_k_final"]
-        rerank = self.cfg["use_reranker"] if rerank is None else rerank
+        rerank = self.reranker_enabled() if rerank is None else rerank
         rewrite = self.cfg["rewrite_query"] if rewrite is None else rewrite
         query = normalize_display(query)
         queries = self._queries(query, rewrite)

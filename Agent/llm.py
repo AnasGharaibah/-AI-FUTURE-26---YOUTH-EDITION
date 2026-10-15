@@ -13,7 +13,16 @@ from DB.arabic import is_arabic, normalize_display
 log = logging.getLogger("yoth.llm")
 
 # ---- model config (the ONE place to choose the chat model; YOTH_MODEL overrides it) ---------------------------------
-CANDIDATES = ("qwen2.5:7b", "qwen3:8b")             # compared with `python -m Agent.eval --models ...`
+CANDIDATES = ("qwen2.5:7b", "qwen3:8b")             # 6-8 GB GPUs; compared with `python -m Agent.eval --models ...`
+CANDIDATES_12GB = ("qwen3:14b", "qwen2.5:14b")      # also tested on GPUs with >= 12 GB
+
+
+def candidates(vram_gb: float | None = None) -> tuple[str, ...]:
+    """Chat models worth benchmarking on this machine's GPU (Agent.eval --models ...)."""
+    if vram_gb is None:
+        from DB.pipeline import gpu_vram_gb
+        vram_gb = gpu_vram_gb()
+    return CANDIDATES + (CANDIDATES_12GB if vram_gb >= 12 else ())
 FALLBACK_MODEL = "qwen3:4b-instruct"                # fast, fits 8 GB comfortably
 LLM_MODEL = os.getenv("YOTH_MODEL", FALLBACK_MODEL)
 MODEL = LLM_MODEL                                   # kept: older code / eval read llm.MODEL

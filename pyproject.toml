@@ -16,8 +16,9 @@ dependencies = [
     "marker-pdf>=1.10.2",
     "markitdown[all]>=0.1.5",
     "mlx-whisper>=0.4.3; sys_platform == 'darwin'",
-    "openai-whisper>=20250625; sys_platform != 'darwin'",
+    "faster-whisper>=1.2.0; sys_platform != 'darwin'",
     "av>=14.0.0; sys_platform != 'darwin'",
+    "torch>=2.14.1",
     "numpy>=2.5.4",
     "ollama>=0.6.3",
     "pypdf>=6.20.1",
@@ -42,6 +43,16 @@ dev = [
     "pytest>=9.1.1",
     "python-docx>=1.2.0",
 ]
+
+# NVIDIA GPUs (Windows / Linux): torch from the CUDA 12.6 build (cuDNN 9 included - faster-whisper's CTranslate2
+# uses the same libraries). macOS keeps the normal torch (MPS).
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu126", marker = "sys_platform != 'darwin'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
