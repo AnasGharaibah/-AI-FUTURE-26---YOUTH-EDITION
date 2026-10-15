@@ -109,6 +109,9 @@ def test_number_words():
     assert check_numbers("لمن أتم 16 سنة", "لمن أتم السادسة عشر") == []
     assert check_numbers("الرسوم ستون دينارا", "50 دينار") == ["60"]
     assert drop_number_sentences("الرسوم ستون دينارا. المدة 45 دقيقة.", ["60"]) == "المدة 45 دقيقة."
+    # amounts glued to words in the documents ("250دينار", "10دنانير غرامة") are still found
+    assert check_numbers("الرسوم 250 دينار للمرة الثانية", "250دينار لاي مرة") == []
+    assert check_numbers("غرامة 10 دنانير", "10دنانير غرامة تاخير") == []
 
 
 def test_situation_hints():
@@ -117,6 +120,10 @@ def test_situation_hints():
     assert "أكثر من 90 يوماً" in situation_hints("تزوجت من 4 شهور")[0]
     assert situation_hints("ضاع جوازي وأنا برا الأردن") == ["المستخدم خارج الأردن."]
     assert situation_hints("كم رسوم الجواز؟") == []
+    assert situation_hints("عمري 25 وجوازي انتهى")[1] == "الوثيقة منتهية الصلاحية."
+    assert situation_hints("دفتر العائلة غير منتهي") == []
+    assert "المرة الثانية" in situation_hints("ضاع للمرة الثانية بعد سنتين من أول مرة")[0]
+    assert situation_hints("بدي أطلع جواز لأول مرة") == []                 # not a loss count
 
 
 def test_fields_follow_the_question():

@@ -89,7 +89,8 @@ def looks_reversed(text: str) -> bool:
 
 
 # ---- numbers: is every number in a text backed by the source? (answers, summaries, key facts) ----------------------
-_NUM = re.compile(r"(?<![\w.])\d+(?:[.,]\d+)*(?![\w])")
+# no word boundary after the number: the documents glue amounts to words ("250دينار", "10دنانير غرامة")
+_NUM = re.compile(r"(?<![\d.,])(?<![A-Za-z])\d+(?:[.,]\d+)*(?![A-Za-z])")
 _CITE = re.compile(r"\[(\d+)\]")
 _SENTENCE_END = re.compile(r"(?<=[.!?؟])\s+")
 

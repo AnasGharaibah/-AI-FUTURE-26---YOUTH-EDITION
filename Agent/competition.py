@@ -137,7 +137,7 @@ _OFFER = re.compile(normalize_search(r"^\s*(هل (ترغب|تريد|تود|تو�
                                      r"|لا تتردد|إذا كان لديك|إذا كانت لديك|إذا احتجت|يسعدني|أتمنى)"))
 
 
-_GREETING = re.compile(r"^\s*(مرحب[اًا]*|[أا]هل[اًا]*|السلام عليكم|شكر[اًا]* لسؤالك)[^.!؟\n]{0,40}[.!،,]\s*")
+_GREETING = re.compile(r"^\s*(مرحب[اًا]*|[أا]هل[اًا]*|السلام عليكم|شكر[اًا]* لسؤالك|يسعدني|يسرني)[^.!؟\n]{0,80}[.!،,]\s*")
 
 
 def strip_offers(text: str) -> str:
@@ -182,6 +182,15 @@ _LEFT = re.compile(r"(?:باقي|بقي|متبقي|ضايل|ظايل|left)\D{0,1
 _ABROAD = re.compile(r"\bبرا\b|بالخارج|في الخارج|خارج (الاردن|البلاد|المملكه)|مغترب|مقيم (ب|في)\s*(?!الاردن)\w+|abroad")
 _MARRIED = re.compile(r"(?:تزوج\w*|زواج\w*|عقد\w*|كتب\w* الكتاب)\D{0,12}?\bمن\s*(\d{1,3}|سنتين|سنه|شهرين|شهر)\s*"
                       r"(يوم|ايام|شهر|شهور|اشهر|سنه|سنين|سنوات)?")
+_LOSS = re.compile(r"ضاع|ضايع|ضيع|فقد|فاقد|سرق|lost|stolen")
+_ADULT = re.compile(r"بالغ|adult|grown")
+_EXPIRED = re.compile(r"منتهي|انتهي|انتهت|خلص|خلصت|expired")
+_NOT_EXPIRED = re.compile(r"(غير|مش|مو|ما|لم|ليس)\s*(منتهي|انتهي|انتهت|خلص)|ساري|باقي|بقي|متبقي|not expired|valid")
+_NTH_TIME = [      # highest first: "ضاع للمرة الثانية بعد سنتين من أول مرة" is the second time
+    ("الثالثة", re.compile(r"(المره|مره|للمره) (الثالثه|ثالثه)|ثالث مره|third time|3rd time")),
+    ("الثانية", re.compile(r"(المره|مره|للمره) (الثانيه|ثانيه)|ثاني مره|مره كمان|مره ثانيه|second time|2nd time")),
+    ("الأولى", re.compile(r"(المره|للمره) الاولي|اول مره|first time")),
+]
 _DAYS = {"يوم": 1, "ايام": 1, "شهر": 30, "شهور": 30, "اشهر": 30, "سنه": 365, "سنين": 365, "سنوات": 365}
 
 
@@ -195,6 +204,8 @@ def situation_hints(question: str) -> list[str]:
         if 0 < age < 120:
             band = "أقل من 16 سنة" if age < 16 else ("16 سنة أو أكثر وأقل من 18" if age < 18 else "18 سنة أو أكثر")
             hints.append(f"العمر المذكور {age} سنة، أي {band}.")
+    elif _ADULT.search(q):
+        hints.append("صاحب الطلب بالغ، أي 18 سنة أو أكثر.")
     m = _LEFT.search(q)
     if m:
         num, unit = m.group(1), m.group(2) or ""
@@ -210,6 +221,12 @@ def situation_hints(question: str) -> list[str]:
             {"سنه": 365, "سنتين": 730, "شهر": 30, "شهرين": 60}[m.group(1)]
         hints.append(f"مضى على عقد الزواج حوالي {days} يوماً، أي "
                      f"{'أقل من 90 يوماً' if days < 90 else 'أكثر من 90 يوماً'}.")
+    if _EXPIRED.search(q) and not _NOT_EXPIRED.search(q):
+        hints.append("الوثيقة منتهية الصلاحية.")
+    count = next((n for n, rx in _NTH_TIME if rx.search(q)), None) if _LOSS.search(q) else None
+    if count:
+        hints.append(f"هذه المرة {count} لفقدان الوثيقة، أي ليست المرة الأولى."
+                     if count != "الأولى" else "هذه المرة الأولى لفقدان الوثيقة.")
     if _ABROAD.search(q):
         hints.append("المستخدم خارج الأردن.")
     return hints
@@ -252,14 +269,19 @@ class Chat:
             ans, contexts = router.clarification(r), []
             dbg["flags"].append("clarify")
         else:
-            ans, contexts = self._answer(q, r.standalone or q, r.services, dbg)
+            topic = q                         # "وإذا كان تالف؟" after a fee question -> still the fees
+            if wanted_fields(q) is None and self.history:
+                topic = f"{self.history[-1][0]} {q}"
+            ans, contexts = self._answer(q, r.standalone or q, r.services, dbg, topic)
             self.prev_services = r.services
         self.history.append((q, ans))
         dbg["seconds"] = round(time.time() - t0, 2)
         return {"answer": ans, "contexts": contexts, "debug": dbg}
 
-    def _answer(self, q: str, standalone: str, services: list[str], dbg: dict) -> tuple[str, list[str]]:
-        snips = build_snippets(services, q if standalone == q else f"{q} {standalone}")
+    def _answer(self, q: str, standalone: str, services: list[str], dbg: dict,
+                topic: str | None = None) -> tuple[str, list[str]]:
+        topic = topic or q
+        snips = build_snippets(services, topic if standalone == q else f"{topic} {standalone}")
         dbg["snippets"] = len(snips)
         text = _generate(q, standalone, snips, self.model)
         cites = cited_numbers(text, len(snips))

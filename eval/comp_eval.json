@@ -17,7 +17,7 @@
     {"chat_id": "e14", "messages": [{"message_id": "e14-1", "type": "documents", "question": "شو الوثائق المطلوبة لإصدار دفتر عائلة لأول مرة؟", "expect": "شهاده الزواج|البطاقات الشخصيه", "services": ["family_book_first_issue"]}]},
     {"chat_id": "e15", "messages": [{"message_id": "e15-1", "type": "documents", "question": "شو الأوراق المطلوبة لهوية بدل فاقد؟", "expect": "نموذج|تبليغ/بلاغ|صور", "services": ["id_card_lost"]}]},
     {"chat_id": "e16", "messages": [{"message_id": "e16-1", "type": "documents", "question": "ضاع جوازي وأنا برا الأردن، شو الأوراق المطلوبة؟", "expect": "اضطراري|ترجم", "services": ["passport_lost"]}]},
-    {"chat_id": "e17", "messages": [{"message_id": "e17-1", "type": "documents", "question": "مين بقدر يقدم طلب دفتر عائلة بدل فاقد؟", "expect": "رب الاسره|الزوجه", "services": ["family_book_lost"]}]},
+    {"chat_id": "e17", "messages": [{"message_id": "e17-1", "type": "documents", "question": "مين بقدر يقدم طلب دفتر عائلة بدل فاقد؟", "expect": "رب الاسره|زوج", "services": ["family_book_lost"]}]},
     {"chat_id": "e18", "messages": [{"message_id": "e18-1", "type": "notes", "question": "رب الأسرة توفى وكان متزوج أكثر من زوجة، كيف بصير وضع دفتر العائلة؟", "expect": "مستقل|اقدم الزوجات", "services": [], "services_any": ["family_book_first_issue", "family_book_renewal"], "allowed": ["family_book_lost", "family_book_damaged"]}]},
     {"chat_id": "e19", "messages": [{"message_id": "e19-1", "type": "notes", "question": "ضاعت هويتي وبلغت الشرطة، متى بقدر أستلم البدل؟", "expect": "اسبوعين", "services": ["id_card_lost"]}]},
     {"chat_id": "e20", "messages": [{"message_id": "e20-1", "type": "notes", "question": "إذا قدمت على تجديد الجواز بمكتب الخدمة المستعجلة، في رسوم إضافية؟", "expect": "25", "services": ["passport_renewal"]}]},

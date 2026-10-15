@@ -18,7 +18,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from DB.arabic import check_numbers, normalize_search  # noqa: E402
+from DB.arabic import check_numbers, normalize_search, number_words  # noqa: E402
 
 from Agent import competition, ollama_http  # noqa: E402
 
@@ -31,7 +31,7 @@ def answer_ok(m: dict, ans: str, contexts: list[str]) -> bool | None:
         return not contexts and (ans == competition.OUT_OF_SCOPE or competition.is_not_found(ans))
     if exp == "CLARIFY":
         return not contexts and ("؟" in ans or "?" in ans)
-    a = normalize_search(ans)
+    a = normalize_search(ans) + " " + " ".join(number_words(ans))     # "ثلاثة دنانير" also counts as 3
     return all(any(normalize_search(alt).strip() in a for alt in tok.split("/")) for tok in exp.split("|"))
 
 
