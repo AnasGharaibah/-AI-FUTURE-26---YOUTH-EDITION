@@ -26,6 +26,29 @@ python main.py questions.json          # writes answers.json next to questions.j
 3. Turn Wi-Fi off and run `python main.py eval/practice/questions.json` once.
 4. Run `ollama ps` and check that it shows `100% GPU`.
 
+### Talk to it
+
+```bash
+python chat.py          # type a question; 'new' = new chat, 'exit' = quit
+```
+
+**What it prints for each question:**
+- the answer and its contexts;
+- the route, and what the bot understood;
+- flags (retries, typo fixes, memory);
+- the time taken and the prompt tokens.
+
+**Memory within a chat:**
+- The bot remembers what you said earlier about the same document. For example, "أنا بالأردن ومش عسكري وجوازي
+  مخلص ورقه" given in reply to its question is used for the next "كم المبلغ؟".
+- If the fee depends on something you didn't say, it lists the cases and asks **one** question about what is
+  missing.
+
+**Logs:** everything is saved in `chat_logs/`:
+- `chat_log.md` is readable, and better in VS Code when the terminal shows Arabic in the wrong order.
+- `chat_log.json` holds all chats in the `answers_example.json` format: `chats → messages → message_id, question,
+  answer, contexts`.
+
 ### Ollama settings
 
 | Where | Setting |
@@ -104,7 +127,17 @@ is therefore rule-based first:
   - age compared with 16 and 18;
   - days left before expiry compared with 180;
   - days since marriage compared with 90 (family book late fee);
-  - "the user is abroad".
+  - expired, or pages full ("مخلص ورقه" means full pages, not expired);
+  - which loss it is (first, second, third);
+  - military or not;
+  - inside or outside Jordan.
+
+  The facts are taken from all of the user's messages in the chat, and the newest one wins.
+- **Conversation:** in a multi-message chat about the same document, the answer prompt also sees the user's last
+  messages and the question the bot just asked.
+- **Typos:** ة inside a word is read as و (جةاز → جواز).
+- **One question back:** if the model asks several questions, only the first is kept. A fee answer that lists the
+  cases gets one question about the missing facts.
 
 ### 4. Not making things up
 - **Grounded contexts:** `contexts` holds exactly the snippets the answer cited, in citation order, as
@@ -159,6 +192,7 @@ uv run pytest tests/test_competition.py                   # offline unit tests (
 
 ```
 main.py                 competition entry point (stdlib only)
+chat.py                 interactive terminal chat, logs to chat_logs/
 Agent/competition.py    answer step, guards, Chat (one per conversation)
 Agent/router.py         lexicon router + JSON-schema LLM router
 Agent/services.py       parsing / cleaning of the 12 files, snippets, contexts

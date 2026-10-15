@@ -140,7 +140,7 @@ def test_overlap_fallback_prefers_matching_numbers():
 def test_answer_without_citation_retries_then_uses_overlap(monkeypatch):
     calls = []
 
-    def fake(question, standalone, snips, model, reminder=""):
+    def fake(question, standalone, snips, model, reminder="", convo="", hints=None):
         calls.append(reminder)
         return "رسوم جواز السفر بدل تالف 100 دينار."
     monkeypatch.setattr(competition, "_generate", fake)
@@ -158,3 +158,51 @@ def test_unsupported_number_is_retried_then_dropped(monkeypatch):
     ans, ctx = competition.Chat()._answer("كم الرسوم والمدة لجواز بدل تالف؟", "x", ["passport_damaged"], dbg)
     assert ans == "المدة 45 دقيقة."
     assert ctx == ["جواز سفر بدل تالف - الزمن المستغرق: 45 دقيقة"]
+
+
+def test_typos_and_full_pages():
+    from Agent.competition import fix_typos
+    q = fix_typos("انا بالاردن ةمش عسكري و جةاز سفري مخلص ةرقه")
+    assert q == "انا بالاردن ومش عسكري و جواز سفري مخلص ورقه"
+    assert fix_typos("الرسوم مدة صلاحية") == "الرسوم مدة صلاحية"              # ة at the end of a word stays
+    assert situation_hints(q) == ["صفحات جواز السفر ممتلئة.", "المستخدم ليس من العسكريين أو الأجهزة الأمنية.",
+                                  "المستخدم داخل الأردن."]                   # "مخلص ورقه" is not "expired"
+    assert wanted_fields("كم المبلغ؟") == ["الشروط", "ملاحظات", "الرسوم"]
+
+
+def test_one_question_and_dangling_line():
+    from Agent.competition import drop_dangling, one_question
+    asked = one_question("يختلف المبلغ، فيرجى الإجابة على الأسئلة التالية:\n1. هل أنت داخل الأردن؟\n2. هل أنت عسكري؟")
+    assert asked == "يختلف المبلغ، فيرجى الإجابة على السؤال التالي:\nهل أنت داخل الأردن؟"
+    assert drop_dangling("تحتاج:\n- البطاقة\n\nفإن المبلغ المطلوب هو:") == "تحتاج:\n- البطاقة"
+
+
+def test_ask_missing_only_asks_what_is_not_known():
+    from Agent.competition import ask_missing, chat_hint_map
+    fees = snippets(["passport_renewal"], ["الرسوم", "ملاحظات"])
+    listing = "- 20 دينار.\n- 25 دينار.\n- 50 دينار.\n- 100 دينار."
+    assert ask_missing(listing, fees, set()).endswith(
+        "كم عمرك، وهل الوثيقة منتهية أو باقٍ على انتهائها أقل من 180 يوماً، وهل أنت داخل الأردن أم خارجه؟")
+    known = set(chat_hint_map(["عمري 20 وانا بالاردن وجوازي مخلص ورقه"]))
+    assert ask_missing(listing, fees, known) == listing
+    assert ask_missing("الرسوم 50 دينار.", fees, set()) == "الرسوم 50 دينار."
+
+
+def test_chat_remembers_the_users_situation(monkeypatch):
+    """The user answers the bot's question in a later message: the answer prompt sees the earlier messages and the
+    facts computed from the whole chat (newest first)."""
+    prompts = []
+
+    def fake_chat(messages, **kw):
+        prompts.append(messages[-1]["content"])
+        return "الرسوم 20 دينار [1]."
+    monkeypatch.setattr(competition.ollama_http, "chat", fake_chat)
+    monkeypatch.setattr(router, "llm_route", lambda *a, **k: {})
+    bot = competition.Chat()
+    bot.ask("كم رسوم تجديد الجواز؟")
+    bot.ask("انا بالاردن ةمش عسكري وجةاز سفري مخلص ةرقه")
+    res = bot.ask("كم المبلغ؟")
+    assert res["debug"]["route"] == ["passport_renewal"]
+    assert "- انا بالاردن ومش عسكري وجواز سفري مخلص ورقه" in prompts[-1]
+    assert "صفحات جواز السفر ممتلئة." in prompts[-1] and "المستخدم داخل الأردن." in prompts[-1]
+    assert "(جواز سفر بدل تالف" not in prompts[-1] and "| الرسوم)" in prompts[-1]
