@@ -29,6 +29,16 @@ from DB.arabic import normalize_search as norm  # noqa: E402
 REFUSALS = ("لم اجد هذه المعلومه", "i could not find", "could not find this information", "no relevant documents",
             "do not contain", "does not contain", "not mentioned", "لا تتوفر", "لا توجد معلومات")
 NO_SEARCH_TYPES = {"meta"}                              # every other type is a service question that must search
+SUMMARY_TYPES = {"summarize"}                           # grounded by search_documents OR get_document_summary
+
+
+def tool_use_ok(typ: str, tools) -> bool:
+    tools = tools or []
+    if typ in NO_SEARCH_TYPES:
+        return "search_documents" not in tools
+    if typ in SUMMARY_TYPES:
+        return "search_documents" in tools or "get_document_summary" in tools
+    return "search_documents" in tools
 
 
 def is_refusal(answer: str) -> bool:
@@ -58,7 +68,7 @@ def check(answer: str, expected: str, typ: str = "", tools=()) -> bool:
     pos = _token_positions(a, expected)
     if any(p is None for p in pos):
         return False
-    if typ in NO_SEARCH_TYPES and "search_documents" in tools:
+    if typ in NO_SEARCH_TYPES | SUMMARY_TYPES and not tool_use_ok(typ, tools):
         return False
     if typ == "ambiguous":                              # every case answered, THEN one follow-up question
         return max(a.rfind("؟"), a.rfind("?")) > max(pos)
@@ -85,7 +95,7 @@ class PeakMemory:
         self.ram = max(self.ram, rss / 1e9)
         try:
             out = subprocess.run(["nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader,nounits"],
-                                 capture_output=True, text=True, timeout=5).stdout
+                                 capture_output=True, encoding="utf-8", errors="replace", timeout=5).stdout
             self.vram = max(self.vram or 0, sum(float(x) for x in out.split()) / 1024)
         except Exception:
             pass
@@ -181,7 +191,7 @@ def summarize(rows, tag, model, mode="rag", csv_name="", mem=None):
     secs = sorted(r["seconds"] for r in rows)
     n = len(rows) or 1                                  # no rows -> zeros, not ZeroDivisionError
     tools = [r.get("tools") or [] for r in rows]
-    correct_tool_use = [("search_documents" in t) == (r["type"] not in NO_SEARCH_TYPES) for r, t in zip(rows, tools)]
+    correct_tool_use = [tool_use_ok(r["type"], t) for r, t in zip(rows, tools)]
     return {"tag": tag, "model": model, "mode": mode, "csv": csv_name, "n": len(rows),
             "correct": sum(r["ok"] for r in rows),
             "accuracy": round(sum(r["ok"] for r in rows) / n, 3),

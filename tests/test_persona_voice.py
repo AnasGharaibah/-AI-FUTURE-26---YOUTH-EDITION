@@ -4,10 +4,11 @@ from DB.pipeline import Pipeline
 
 
 def test_one_persona_everywhere():
-    texts = [context.SYSTEM_PROMPT, context.SYSTEM_PROMPT_AR] + [t.description for t in tools.TOOLS]
+    texts = [context.SYSTEM_PROMPT, context.SYSTEM_PROMPT_AR] + [t["function"]["description"] for t in tools.tool_specs()]
     assert not any("company" in t.lower() or "employee" in t.lower() for t in texts)
     assert "Verity" in context.SYSTEM_PROMPT and "Verity" in context.SYSTEM_PROMPT_AR
-    assert "government" in tools.search_documents.description
+    assert "government" in tools.tool_specs()[0]["function"]["description"]
+    assert "الحكومية" in tools.tool_specs()[0]["function"]["description"]
 
 
 def test_rag_and_tools_share_one_pipeline():

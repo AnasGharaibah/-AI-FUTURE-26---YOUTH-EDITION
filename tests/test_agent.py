@@ -1,24 +1,7 @@
-"""Agent fixes that need no LLM: calculator limits, eval edge cases."""
+"""Eval edge cases and expected-answer syntax (no LLM)."""
 import json
 
 from Agent import eval as ev
-from Agent.tools import calculate
-
-
-def calc(expr: str) -> str:
-    return calculate.invoke({"expression": expr})
-
-
-def test_calculate_normal():
-    assert calc("3 * 120 + 45.5") == "405.5"
-    assert calc("2 ** 10") == "1024"
-
-
-def test_calculate_rejects_huge_exponent_and_numbers():
-    assert "exponent too large" in calc("9 ** 9 ** 9")
-    assert "number too large" in calc("10 ** 13")
-    assert "number too large" in calc("99999999 * 99999999")
-    assert "unsupported" in calc("__import__('os')")
 
 
 def test_summarize_and_table_with_no_rows(tmp_path, capsys):

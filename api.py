@@ -18,7 +18,7 @@ from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from Agent import llm, rag
+from Agent import agent, brain, llm, rag
 from Agent.context import NAME
 from DB.arabic import is_arabic, normalize_search, tokens
 from DB.parse import PAGE_RE, Parser
@@ -304,7 +304,7 @@ def chat(req: ChatIn):
     def events():
         try:
             q = req.question.strip()
-            if _CASUAL.match(normalize_search(q)):
+            if brain.MODE == "rag" and _CASUAL.match(normalize_search(q)):    # agent mode: the router handles it
                 ar = is_arabic(q)
                 reply = llm.chat([
                     {"role": "system", "content": f"You are {NAME}, a friendly government-services assistant that "
@@ -319,6 +319,9 @@ def chat(req: ChatIn):
             if names == []:
                 yield _line({"type": "not_found", "text": rag.REFUSAL_AR if is_arabic(q) else rag.REFUSAL_EN})
                 yield _line({"type": "done", "mode": "documents", "found": False})
+                return
+            if brain.MODE == "agent":
+                yield from _agent_events(q, names, _pairs(req.history))
                 return
             r = None
             for kind, val in rag.answer_stream(q, sources=names, history=_pairs(req.history)):
@@ -340,6 +343,46 @@ def chat(req: ChatIn):
             yield _line({"type": "error", "text": f"{e} (is Ollama running?)"})
 
     return StreamingResponse(events(), media_type="application/x-ndjson")
+
+
+def _agent_events(q: str, scope: list[str] | None, history: list[tuple[str, str]]):
+    """Agent mode (Agent/agent.py) as the same event stream the page already understands."""
+    r = None
+    for kind, val in agent.run(q, scope=scope, history=history):
+        if kind == "tool":
+            yield _line({"type": "tool", "name": val})
+        elif kind == "retrieved":
+            yield _line({"type": "sources", "sources": [_source(s) for s in val["sources"]]})
+        elif kind == "done":
+            r = val
+    if r["route"] in (agent.CHIT_CHAT, agent.META):
+        yield _line({"type": "token", "text": r["answer"]})
+        yield _line({"type": "done", "mode": "chat"})
+        return
+    if not r["sources"]:
+        yield _line({"type": "not_found", "text": r["answer"]})
+        yield _line({"type": "done", "mode": "documents", "found": False})
+        return
+    yield _line({"type": "sources", "sources": [_source(s) for s in r["sources"]]})
+    yield _line({"type": "final", "text": r["answer"]})
+    yield _line({"type": "verification", "items": _verify(r["answer"], r["sources"])})
+    yield _line({"type": "done", "mode": "documents", "found": True})
+
+
+# ================================================================ overview (welcome screen)
+@app.get("/overview")
+@app.get("/api/overview")
+def overview():
+    """{documents: n, services: [{file, doc_id, service, summary (1 line), topics, cases, example_questions}]}
+    from data/summaries.json - government services first."""
+    from DB import summaries as S
+    present = {f.name for f in raw_files()}
+    services = [s for s in agent._gov_first(list(S.load().values())) if s["file"] in present]
+    return {"documents": len(present), "services": [
+        {"file": s["file"], "doc_id": doc_id(s["file"]), "service": s["service"],
+         "summary": S._shorten(s.get("summary", ""), None), "topics": s.get("topics", [])[:6],
+         "cases": s.get("cases", []), "example_questions": s.get("example_questions", [])[:5]}
+        for s in services]}
 
 
 # ================================================================ export to Word

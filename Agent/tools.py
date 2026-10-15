@@ -1,94 +1,99 @@
-"""Tools the agent can call. Each @tool docstring is what the LLM reads to decide when to use it."""
-import ast
-import datetime as dt
-import operator
-from concurrent.futures import ThreadPoolExecutor
-from concurrent.futures import TimeoutError as FutureTimeout
-from pathlib import Path
+"""The agent's three tools (Ollama native tool calling). Descriptions in Arabic + English, government wording.
 
-from langchain_core.tools import tool
-
+    search_documents(query, file=None) -> numbered sources from the hybrid search (optionally one file)
+    get_document_summary(file)        -> the stored summary of one document (DB/summaries.py)
+    list_services()                   -> the Service Map
+"""
+from DB import summaries as S
+from DB.arabic import normalize_search
 from DB.pipeline import Pipeline
 
-ROOT = Path(__file__).resolve().parent.parent
+from . import llm
 
 
 def _db() -> Pipeline:
     return Pipeline.shared()                  # same instance as Agent.rag: one Chroma client, one BM25 index
 
 
-@tool
-def search_documents(query: str) -> str:
-    """Search the official government documents (service guides, regulations, FAQs; Arabic and English).
-    Use for any question about a service: fees, required documents, steps, durations, eligibility or articles.
-    Returns numbered sources with file names."""
-    text, hits = _db().context(query)
-    return text if hits else "No relevant documents found."
+def service_files() -> list[str]:
+    """File names the agent may filter on: the summarized documents, else whatever is indexed."""
+    return sorted(S.load()) or sorted(_db().store.sources())
 
 
-@tool
-def query_projects(status: str = "", manager: str = "", client: str = "") -> str:
-    """Look up projects in the projects register spreadsheet (project, client, manager, budget, status).
-    All filters are optional, case-insensitive 'contains' matches. status is e.g. Active, Completed, On hold.
-    Returns a table with budgets in JOD."""
-    import pandas as pd
-    df = pd.read_excel(ROOT / "data/raw/projects.xlsx")
-    for col, val in (("Status", status), ("Manager", manager), ("Client", client)):
-        if val:
-            df = df[df[col].astype(str).str.contains(val, case=False)]
-    if df.empty:
-        return "No matching projects."
-    return df.to_string(index=False) + f"\n\nTotal budget: {df['Budget (JOD)'].sum()} JOD"
+def resolve_file(name: str | None) -> str | None:
+    """The model's file argument -> a real file name (exact, case-insensitive, or by service name); None = no filter."""
+    if not name or not str(name).strip():
+        return None
+    files, want = service_files(), normalize_search(str(name).strip().strip("`'\""))
+    for f in files:
+        if normalize_search(f) == want or normalize_search(f.rsplit(".", 1)[0]) == want:
+            return f
+    for f, s in S.load().items():
+        if want and (want in normalize_search(f) or want in normalize_search(s.get("service", ""))
+                     or normalize_search(s.get("service", "")) in want):
+            return f
+    return None
 
 
-_OPS = {ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul,
-        ast.Div: operator.truediv, ast.Pow: operator.pow, ast.Mod: operator.mod,
-        ast.USub: operator.neg, ast.UAdd: operator.pos}
+def search_documents(query: str, file: str | None = None, start: int = 1, model: str | None = None,
+                     scope: list[str] | None = None) -> tuple[str, list[dict]]:
+    """-> (numbered sources text for the model, hits). Numbers continue from `start` so that several searches in one
+    turn never reuse [1]. scope: the files the user limited the chat to (web UI folder / document)."""
+    from . import rag
+    pipe = _db()
+    pipe.cfg["rewriter"] = lambda q: llm.rewrite_to_msa(q, model)
+    target = resolve_file(file)
+    files = [target] if target else None
+    if scope is not None:
+        files = [f for f in (files or scope) if f in scope]
+        if not files:
+            return "لا توجد نتائج: الملف المطلوب خارج نطاق البحث المحدد.", []
+    hits = pipe.search(query, sources=files)
+    if not hits:
+        return "لا توجد نتائج مطابقة في الوثائق.", []
+    return rag.sources_block(hits, start), hits
 
 
-MAX_EXPONENT = 100
-MAX_NUMBER = 1e12
-CALC_TIMEOUT = 2.0                      # seconds
-_calc_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="calculate")
+def get_document_summary(file: str) -> str:
+    target = resolve_file(file)
+    s = S.load().get(target) if target else None
+    if not s:
+        return f"لا يوجد ملخص للملف {file!r}. الملفات المتاحة: " + "، ".join(service_files())
+    facts = "\n".join(f"- {f['fact']}" + (f" (صفحة {f['source_page']})" if f.get("source_page") else "")
+                      for f in s["key_facts"])
+    return (f"الخدمة: {s['service']}\nالملف: {s['file']}\nالملخص: {s['summary']}\n"
+            f"المواضيع: {'، '.join(s['topics'])}\nالأقسام: {'، '.join(s['sections'])}\n"
+            f"الحالات: {'؛ '.join(s['cases']) or '-'}\nحقائق أساسية:\n{facts or '-'}")
 
 
-def _check(x):
-    if abs(x) > MAX_NUMBER:
-        raise ValueError(f"number too large (limit {MAX_NUMBER:.0e})")
-    return x
+def list_services() -> str:
+    return S.MAP_PATH.read_text(encoding="utf-8") if S.MAP_PATH.exists() else "خريطة الخدمات غير متوفرة بعد."
 
 
-def _eval(node):
-    """Arithmetic only. Every operand and intermediate result must stay <= MAX_NUMBER and exponents <= MAX_EXPONENT,
-    so input like 9**9**9 is rejected instead of freezing the process."""
-    if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)) and not isinstance(node.value, bool):
-        return _check(node.value)
-    if isinstance(node, ast.BinOp) and type(node.op) in _OPS:
-        left, right = _eval(node.left), _eval(node.right)
-        if isinstance(node.op, ast.Pow) and abs(right) > MAX_EXPONENT:
-            raise ValueError(f"exponent too large (limit {MAX_EXPONENT})")
-        return _check(_OPS[type(node.op)](left, right))
-    if isinstance(node, ast.UnaryOp) and type(node.op) in _OPS:
-        return _check(_OPS[type(node.op)](_eval(node.operand)))
-    raise ValueError("unsupported expression")
+def _spec(name: str, description: str, properties: dict, required: list[str]) -> dict:
+    return {"type": "function", "function": {"name": name, "description": description, "parameters": {
+        "type": "object", "properties": properties, "required": required}}}
 
 
-@tool
-def calculate(expression: str) -> str:
-    """Evaluate an arithmetic expression, e.g. '3 * 120 + 45.5'. Supports + - * / ** %."""
-    try:
-        tree = ast.parse(expression, mode="eval").body
-        return str(_calc_pool.submit(_eval, tree).result(timeout=CALC_TIMEOUT))
-    except FutureTimeout:
-        return f"Could not calculate: took longer than {CALC_TIMEOUT:g} s"
-    except Exception as e:
-        return f"Could not calculate: {e}"
+def tool_specs() -> list[dict]:
+    files = service_files()
+    file_prop = {"type": "string", "description": "اسم الملف من خريطة الخدمات / file name from the Service Map",
+                 **({"enum": files} if files else {})}
+    return [
+        _spec("search_documents",
+              "ابحث في الوثائق الرسمية للخدمات الحكومية (الرسوم، الوثائق المطلوبة، الخطوات، الشروط، المدد، المواد). "
+              "يعيد مصادر مرقّمة. / Search the official government-service documents (fees, required documents, "
+              "steps, conditions, durations, articles). Returns numbered sources.",
+              {"query": {"type": "string", "description": "سؤال البحث / the search query"}, "file": file_prop},
+              ["query"]),
+        _spec("get_document_summary",
+              "ملخص وثيقة رسمية كاملة: الخدمة، المواضيع، الحالات، الحقائق الأساسية. / Summary of one official "
+              "document: service, topics, cases, key facts.",
+              {"file": file_prop}, ["file"]),
+        _spec("list_services",
+              "قائمة كل الخدمات والوثائق المتوفرة (خريطة الخدمات). / List every service and document covered "
+              "(the Service Map).", {}, []),
+    ]
 
 
-@tool
-def get_current_date() -> str:
-    """Today's date and weekday."""
-    return dt.date.today().strftime("%A, %Y-%m-%d")
-
-
-TOOLS = [search_documents, query_projects, calculate, get_current_date]
+TOOL_NAMES = ("search_documents", "get_document_summary", "list_services")

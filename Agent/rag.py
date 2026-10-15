@@ -69,9 +69,10 @@ def _evidence(hits) -> list[str]:
     return [h.get("context") or h["text"] for h in hits]
 
 
-def _sources_block(hits) -> str:
+def sources_block(hits, start: int = 1) -> str:
+    """Numbered sources for the LLM: [start] (file, p.N | section)\\n<evidence> ..."""
     blocks, seen = [], set()
-    for i, (h, body) in enumerate(zip(hits, _evidence(hits)), 1):
+    for i, (h, body) in enumerate(zip(hits, _evidence(hits)), start):
         key = h.get("parent_id") if h.get("context") else h["id"]
         if key in seen:
             body = "(نفس القسم المذكور أعلاه)"
@@ -109,15 +110,20 @@ def _clean_citations(text: str, n_sources: int) -> str:
     return _CITE.sub(lambda m: m.group(0) if 1 <= int(m.group(1)) <= n_sources else "", text)
 
 
-def _guard_numbers(text, question, sources, n_sources, history, model, arabic, flags) -> str:
-    """Numbers/fees/durations must come from the sources. One stricter regeneration; if numbers are still
-    unsupported, drop the sentences that contain them and add a 'please verify' note. Logged either way."""
+def _guard_numbers(text, question, sources, n_sources, history, model, arabic, flags, allow_retry=True) -> str:
+    """Numbers/fees/durations must come from the sources. One stricter regeneration (unless allow_retry=False, e.g.
+    the agent's model-call budget is used up); if numbers are still unsupported, drop the sentences that contain them
+    and add a 'please verify' note. Logged either way."""
     bad = check_numbers(text, sources)
     if not bad:
         return text
     flags.append("unsupported_numbers:" + ",".join(bad))
-    log.warning("numbers not in sources: %s - regenerating | q=%s", bad, question)
-    retry = _clean_citations(_generate(question, sources, history, model, STRICT_NUMBERS_AR), n_sources)
+    if allow_retry:
+        log.warning("numbers not in sources: %s - regenerating | q=%s", bad, question)
+        retry = _clean_citations(_generate(question, sources, history, model, STRICT_NUMBERS_AR), n_sources)
+        flags.append("numbers_retry")
+    else:
+        retry = text
     still = check_numbers(retry, sources)
     if not still:
         flags.append("numbers_fixed_by_retry")
@@ -184,7 +190,7 @@ def _run(question, thread_id, model, use_history, rerank, rewrite, sources, hist
         res["flags"].append("no_hits" if not hits else "below_similarity")
     else:
         yield "retrieved", res
-        sources = _sources_block(hits)
+        sources = sources_block(hits)
         if stream:
             text = yield from _generate_stream(standalone, sources, list(hist), model)
         else:
