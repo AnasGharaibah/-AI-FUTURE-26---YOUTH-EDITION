@@ -1,0 +1,19 @@
+question,expected,type,source,thread
+ما الوثائق المطلوبة لبدل فاقد جواز السفر؟,تقرير فقدان,documents,passport_service_guide.pdf,
+كم غرامة التأخر في تجديد رخصة القيادة؟,12&شهر,fees,driving_licence_faq.html,
+كيف أستبدل رخصة قيادة أجنبية؟,25&ترجمة,steps,driving_licence_faq.html,
+هل يمكن التقديم على بطاقة الهوية إلكترونياً؟,مراكز الأحوال المدنية,steps,national_id_service.docx,
+كم مدة صلاحية بطاقة الهوية الوطنية؟,10 سنوات/عشر سنوات,eligibility,national_id_service.docx,
+متى يمكن تجديد جواز السفر قبل انتهاء صلاحيته؟,ستة أشهر/6 أشهر/ستة اشهر,eligibility,passport_service_guide.pdf,
+كم رسوم جواز السفر لمن هم دون 18 سنة؟,15,fees,passport_service_guide.pdf,
+ما مدة إنجاز بدل فاقد جواز السفر؟,10 أيام/عشرة أيام,time,passport_service_guide.pdf,
+ما عقوبة تقديم وثائق مزورة؟,100&500,article,civil_services_regulation.txt,
+خلال كم يوم يتم إشعاري برفض الطلب؟,3 أيام/ثلاثة أيام,article,civil_services_regulation.txt,
+قديش بتكلف الهوية اذا ضاعت؟,20,dialect,national_id_service.docx,
+بقدر اجدد رخصة السواقة بنفس اليوم؟,نفس اليوم,dialect,driving_licence_faq.html,
+How much is the fine for renewing a driving licence late?,12,english,driving_licence_faq.html,
+أيهما أغلى: تجديد رخصة القيادة أم تجديد بطاقة الهوية؟,20&10,compare,driving_licence_faq.html,
+ما رسوم ومدة إنجاز بطاقة الهوية لأول مرة؟,10&3 أيام/ثلاثة أيام,multipart,national_id_service.docx,
+ما الوثائق المطلوبة لتجديد رخصة القيادة؟,فحص طبي,followup,driving_licence_faq.html,t1
+وكم رسوم التجديد؟,20,followup,driving_licence_faq.html,t1
+كم رسوم استخراج شهادة عدم محكومية؟,NOT_FOUND,notfound,,

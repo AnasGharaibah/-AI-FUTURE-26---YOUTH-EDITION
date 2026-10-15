@@ -99,8 +99,23 @@ class Parser:
                             processor_list=cp.get_processors(),
                             renderer=cp.get_renderer())
 
+    @staticmethod
+    def _unload_ollama_models():
+        """Marker needs GBs of RAM: never run it while Ollama holds a chat model (8 GB machines swap or crash).
+        Unloads every loaded model; the embedder / chat model reload on their next request."""
+        try:
+            import ollama
+            client = ollama.Client(timeout=30)
+            for m in client.ps().get("models", []):
+                name = m.get("model") or m.get("name")
+                client.generate(model=name, prompt="", keep_alive=0)
+                print(f"unloaded {name} from Ollama before running Marker")
+        except Exception as e:                 # Ollama not running: nothing to unload
+            print(f"(could not check Ollama models before Marker: {e})")
+
     def _marker_to_md(self, path: Path) -> str:
         if self._marker is None:
+            self._unload_ollama_models()
             print("loading Marker models (slow the first time)...")
             try:
                 self._marker = self._load_marker()

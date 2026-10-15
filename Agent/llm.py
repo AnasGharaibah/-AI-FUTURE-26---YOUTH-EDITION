@@ -12,9 +12,21 @@ from DB.arabic import is_arabic, normalize_display
 
 log = logging.getLogger("yoth.llm")
 
-MODEL = os.getenv("YOTH_MODEL", "qwen3:4b-instruct")        # any Ollama chat model; compared in Agent/eval.py
+# ---- model config (the ONE place to choose the chat model; YOTH_MODEL overrides it) ---------------------------------
+CANDIDATES = ("qwen2.5:7b", "qwen3:8b")             # compared with `python -m Agent.eval --models ...`
+FALLBACK_MODEL = "qwen3:4b-instruct"                # fast, fits 8 GB comfortably
+LLM_MODEL = os.getenv("YOTH_MODEL", FALLBACK_MODEL)
+MODEL = LLM_MODEL                                   # kept: older code / eval read llm.MODEL
+# 8 GB RAM settings: 8k context, near-deterministic, model stays loaded between questions. The reranker stays off
+# (DB.pipeline DEFAULTS["use_reranker"]); Marker never runs while a chat model is loaded (DB.parse unloads it first).
 OPTIONS = {"temperature": 0.1, "num_ctx": 8192}
+KEEP_ALIVE = os.getenv("YOTH_KEEP_ALIVE", "30m")
 _no_think: set[str] = set()                         # models that reject think=False (e.g. gemma3)
+
+
+def is_hybrid_qwen3(model: str) -> bool:
+    """qwen3:4b / qwen3:8b think by default and ignore think=False in their chat template."""
+    return model.startswith("qwen3") and "instruct" not in model and "vl" not in model
 
 
 TIMEOUT = float(os.getenv("YOTH_LLM_TIMEOUT", "90"))     # seconds per request; a hung Ollama runner must not freeze the app
@@ -43,15 +55,15 @@ def chat(messages: list[dict], model: str | None = None, max_tokens: int = 400, 
     opts = {**OPTIONS, "num_predict": max_tokens}
     if temperature is not None:
         opts["temperature"] = temperature
-    if model.startswith("qwen3") and "instruct" not in model and "vl" not in model:
+    if is_hybrid_qwen3(model):
         return _chatml_nothink(messages, model, opts)
     kw = {} if model in _no_think else {"think": False}
     try:
-        res = _call(_client().chat, model=model, messages=messages, options=opts, **kw)
+        res = _call(_client().chat, model=model, messages=messages, options=opts, keep_alive=KEEP_ALIVE, **kw)
     except Exception as e:
         if kw and "think" in str(e).lower():        # model without thinking support: retry plainly
             _no_think.add(model)
-            res = _call(_client().chat, model=model, messages=messages, options=opts)
+            res = _call(_client().chat, model=model, messages=messages, options=opts, keep_alive=KEEP_ALIVE)
         elif "not found" in str(e).lower():
             raise RuntimeError(f"Model missing. Run: ollama pull {model}") from e
         else:
@@ -68,22 +80,22 @@ def chat_stream(messages: list[dict], model: str | None = None, max_tokens: int 
     if temperature is not None:
         opts["temperature"] = temperature
     try:
-        if model.startswith("qwen3") and "instruct" not in model and "vl" not in model:
+        if is_hybrid_qwen3(model):
             prompt = "".join(f"<|im_start|>{m['role']}\n{m['content']}<|im_end|>\n" for m in messages)
             prompt += "<|im_start|>assistant\n<think>\n\n</think>\n\n"
-            for part in _client().generate(model=model, prompt=prompt, raw=True, stream=True,
+            for part in _client().generate(model=model, prompt=prompt, raw=True, stream=True, keep_alive=KEEP_ALIVE,
                                            options={**opts, "stop": ["<|im_end|>"]}):
                 yield part["response"] or ""
             return
         kw = {} if model in _no_think else {"think": False}
         try:
-            parts = _client().chat(model=model, messages=messages, options=opts, stream=True, **kw)
+            parts = _client().chat(model=model, messages=messages, options=opts, stream=True, keep_alive=KEEP_ALIVE, **kw)
             first = next(parts, None)                   # the request is sent here: unsupported `think` fails now
         except Exception as e:
             if not (kw and "think" in str(e).lower()):
                 raise
             _no_think.add(model)
-            parts = _client().chat(model=model, messages=messages, options=opts, stream=True)
+            parts = _client().chat(model=model, messages=messages, options=opts, stream=True, keep_alive=KEEP_ALIVE)
             first = next(parts, None)
         if first is not None:
             yield first["message"]["content"] or ""
@@ -100,7 +112,8 @@ def _chatml_nothink(messages, model, opts) -> str:
     ourselves and pre-fill an empty <think></think> - the documented way to turn thinking off."""
     prompt = "".join(f"<|im_start|>{m['role']}\n{m['content']}<|im_end|>\n" for m in messages)
     prompt += "<|im_start|>assistant\n<think>\n\n</think>\n\n"
-    res = _call(_client().generate, model=model, prompt=prompt, raw=True, options={**opts, "stop": ["<|im_end|>"]})
+    res = _call(_client().generate, model=model, prompt=prompt, raw=True, keep_alive=KEEP_ALIVE,
+                options={**opts, "stop": ["<|im_end|>"]})
     return re.sub(r"<think>.*?</think>", "", res["response"] or "", flags=re.S).strip()
 
 

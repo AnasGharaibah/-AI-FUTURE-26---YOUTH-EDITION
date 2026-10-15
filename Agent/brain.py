@@ -4,6 +4,7 @@
     print(ask("كم رسوم تجديد جواز السفر؟", thread_id="anas"))
 """
 import os
+import re
 
 from langchain_core.messages import SystemMessage
 from langchain_ollama import ChatOllama
@@ -17,15 +18,17 @@ from .context import SYSTEM_PROMPT
 from .memory import checkpointer
 from .tools import TOOLS
 
-MODEL = llm.MODEL                                  # YOTH_MODEL env; any Ollama chat model
+MODEL = llm.MODEL                                  # model at import time (banner); calls read llm.MODEL
 MODE = os.getenv("YOTH_MODE", "rag")               # "rag" = retrieve-then-answer (Arabic gov docs); "agent" = tool-calling graph
 
 
-def build_graph(model: str = MODEL):
-    llm = ChatOllama(model=model, temperature=0.1, num_ctx=8192, reasoning=False).bind_tools(TOOLS)
+def build_graph(model: str | None = None):
+    model = model or llm.MODEL
+    chat_model = ChatOllama(model=model, temperature=llm.OPTIONS["temperature"], num_ctx=llm.OPTIONS["num_ctx"],
+                            keep_alive=llm.KEEP_ALIVE, reasoning=False).bind_tools(TOOLS)
 
     def call_llm(state: MessagesState):
-        return {"messages": [llm.invoke([SystemMessage(SYSTEM_PROMPT)] + state["messages"])]}
+        return {"messages": [chat_model.invoke([SystemMessage(SYSTEM_PROMPT)] + state["messages"])]}
 
     g = StateGraph(MessagesState)
     g.add_node("llm", call_llm)
@@ -36,22 +39,33 @@ def build_graph(model: str = MODEL):
     return g.compile(checkpointer=checkpointer)
 
 
-_graph = None
+_graphs: dict[str, object] = {}
 
 
-def graph():
-    global _graph
-    if _graph is None:
-        _graph = build_graph()
-    return _graph
+def graph(model: str | None = None):
+    model = model or llm.MODEL
+    if model not in _graphs:
+        _graphs[model] = build_graph(model)
+    return _graphs[model]
 
 
 def ask(question: str, thread_id: str = "default") -> str:
     if MODE == "rag":
         return rag.answer(question, thread_id)["answer"]
-    out = graph().invoke({"messages": [("user", question)]},
-                         {"configurable": {"thread_id": thread_id}})
-    return out["messages"][-1].content
+    return ask_traced(question, thread_id)["answer"]
+
+
+def ask_traced(question: str, thread_id: str = "default", model: str | None = None) -> dict:
+    """Agent mode with a trace: {"answer", "tools": [tool names in call order], "model_calls", "retrieved"}."""
+    out = graph(model).invoke({"messages": [("user", question)]}, {"configurable": {"thread_id": thread_id}})
+    msgs = out["messages"]
+    start = max(i for i, m in enumerate(msgs) if m.type == "human")          # this turn only
+    turn = msgs[start + 1:]
+    tools = [c["name"] for m in turn if m.type == "ai" for c in (m.tool_calls or [])]
+    tool_text = "\n".join(m.content for m in turn if m.type == "tool")
+    retrieved = re.findall(r"\[\d+\] \(([^,|)]+)", tool_text)          # "[1] (passport.pdf, p.1 | ...)"
+    return {"answer": msgs[-1].content, "tools": tools, "model_calls": sum(m.type == "ai" for m in turn),
+            "retrieved": [r.strip() for r in retrieved]}
 
 
 def stream(question: str, thread_id: str = "default"):
