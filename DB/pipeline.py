@@ -30,6 +30,10 @@ DEFAULTS = {
     "top_k_final": 5,                        # chunks given to the LLM
     "use_reranker": "auto",                  # "auto" = on when an NVIDIA GPU has >= 8 GB (CUDA, fp16, ~1.1 GB)
     "reranker_min_vram_gb": 8.0,
+    "rerank_mode": "fuse",                   # "fuse" = RRF of search order + reranker order; "replace" = reranker only
+    # "cpu": the VRAM budget of a voice turn (< 7.6 GB on 8 GB: qwen2.5:7b + Whisper + OmniVoice) has no room for
+    # the reranker's 1.1 GB; "cuda" when the GPU has room (12 GB+), "auto" = cuda if available
+    "reranker_device": "cpu",
     "reranker_model": "BAAI/bge-reranker-v2-m3",
     "expand_parents": True,                  # give the LLM the whole section if small
     "parent_max_tokens": 700,
@@ -124,14 +128,22 @@ class Pipeline:
         if self._reranker is None:
             from sentence_transformers import CrossEncoder
             import torch
-            dev = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
+            dev = self.cfg["reranker_device"]
+            if dev == "auto":
+                dev = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
             kw = {"dtype": torch.float16} if dev != "cpu" else {}       # half the memory (1.1 GB instead of 2.2)
             self._reranker = CrossEncoder(self.cfg["reranker_model"], max_length=512, device=dev, model_kwargs=kw)
         # same "[file > section]" context line the embedder saw - otherwise identical-looking chunks of different services tie
         scores = self._reranker.predict([(query, f"{h['source']} > {h['section'] or '-'}\n{h['text']}") for h in hits])
         for h, s in zip(hits, scores):
             h["rerank"] = round(float(s), 4)
-        return sorted(hits, key=lambda h: -h["rerank"])
+        if self.cfg["rerank_mode"] == "replace":
+            return sorted(hits, key=lambda h: -h["rerank"])
+        # "fuse": reciprocal rank fusion of the hybrid-search order and the reranker order. The reranker alone
+        # mis-ranks some Arabic questions (eval: "وين بقدر اقدم على الجواز؟" -> the eligibility chunk first).
+        by_rerank = {id(h): r for r, h in enumerate(sorted(hits, key=lambda h: -h["rerank"]))}
+        fused = {id(h): 1 / (60 + r) + 1 / (60 + by_rerank[id(h)]) for r, h in enumerate(hits)}
+        return sorted(hits, key=lambda h: -fused[id(h)])
 
     def _queries(self, query: str, rewrite: bool):
         """[original] + [MSA rewrite] for Arabic questions (when enabled and the rewriter works)."""
