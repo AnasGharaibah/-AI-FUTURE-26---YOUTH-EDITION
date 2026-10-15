@@ -35,6 +35,7 @@ DEFAULTS = {
     "rewrite_query": True,                   # Arabic questions: also search an MSA rewrite (needs the LLM, cached)
     "rewriter": None,                        # callable(question) -> MSA question; None = Agent.llm.rewrite_to_msa
     "schema": 2,                             # bump when chunking/normalisation changes -> forces a re-index
+    "summaries": True,                       # ingest also writes data/summaries.json + data/service_map.md (LLM)
 }
 
 _SHARED = None                               # see Pipeline.shared()
@@ -59,7 +60,22 @@ class Pipeline:
                 "chunk_algorithm": self.cfg["chunk_algorithm"], "schema": self.cfg["schema"]}
 
     def ingest(self, force: bool = False) -> int:
-        """Parse new/changed documents, then rebuild the index if anything changed."""
+        """Parse new/changed documents, rebuild the index if anything changed, then update the per-document
+        summaries + Service Map (only changed documents are re-summarized)."""
+        count = self._index(force)
+        if count and self.cfg["summaries"]:
+            try:
+                self.summaries()
+            except Exception as e:                   # no chat model / Ollama down: the index is still usable
+                print(f"(summaries skipped: {e})")
+        return count
+
+    def summaries(self, force: bool = False) -> dict:
+        """Per-document summaries (data/summaries.json) + Service Map (data/service_map.md). See DB/summaries.py."""
+        from . import summaries
+        return summaries.build(self, force=force)
+
+    def _index(self, force: bool) -> int:
         t0 = time.time()
         self.parser.parse_all(force=force)
         sig = self._signature()

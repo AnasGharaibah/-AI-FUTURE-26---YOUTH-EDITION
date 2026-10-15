@@ -12,3 +12,5 @@ data/embed_cache.jsonl
 
 # local app state (folders / stars from the web UI)
 data/library.json
+data/summaries.json
+data/service_map.md

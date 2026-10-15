@@ -1,6 +1,7 @@
 """Command line for the DB layer. Run from the project root:
 
-    uv run python -m DB.main ingest [--force]      parse + chunk + embed + store
+    uv run python -m DB.main ingest [--force]      parse + chunk + embed + store (+ summaries at the end)
+    uv run python -m DB.main summaries [--force]   per-document summaries + Service Map (data/service_map.md)
     uv run python -m DB.main search "question"     see what the retriever finds
     uv run python -m DB.main context "question"    the exact text the LLM will get
     uv run python -m DB.main chunks [file] [--n 5] inspect chunks
@@ -11,7 +12,7 @@
 import argparse
 import json
 
-from .pipeline import Pipeline
+from .pipeline import ROOT, Pipeline
 
 def show_hits(db, hits):
     for i, h in enumerate(hits, 1):
@@ -24,6 +25,7 @@ def main():
     ap = argparse.ArgumentParser(prog="python -m DB.main")
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("ingest").add_argument("--force", action="store_true")
+    sub.add_parser("summaries", help="per-document summaries + Service Map").add_argument("--force", action="store_true")
     for name in ("search", "context", "compare"):
         p = sub.add_parser(name)
         p.add_argument("question")
@@ -46,6 +48,9 @@ def main():
     db = Pipeline()
     if a.cmd == "ingest":
         db.ingest(force=a.force)
+    elif a.cmd == "summaries":
+        db.summaries(force=a.force)
+        print("\n" + (ROOT / "data/service_map.md").read_text(encoding="utf-8"))
     elif a.cmd == "search":
         show_hits(db, db.search(a.question, rerank=a.rerank or None, rewrite=False if a.no_rewrite else None))
     elif a.cmd == "context":

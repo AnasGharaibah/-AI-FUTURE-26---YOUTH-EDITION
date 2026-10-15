@@ -86,3 +86,42 @@ def looks_reversed(text: str) -> bool:
     normal = sum(w in _COMMON for w in words)
     mirrored = sum(w[::-1] in _COMMON and w not in _COMMON for w in words)
     return mirrored >= 3 and mirrored > 2 * normal
+
+
+# ---- numbers: is every number in a text backed by the source? (answers, summaries, key facts) ----------------------
+_NUM = re.compile(r"(?<![\w.])\d+(?:[.,]\d+)*(?![\w])")
+_CITE = re.compile(r"\[(\d+)\]")
+_SENTENCE_END = re.compile(r"(?<=[.!?؟])\s+")
+
+
+def _num(n: str) -> str:
+    """'1,000' -> '1000', '٢٫٥' -> '2.5', '25.0' -> '25': one spelling per value."""
+    n = normalize_display(n).replace("٫", ".").replace("٬", "").replace(",", "")
+    return n[:-2] if n.endswith(".0") else n
+
+
+def check_numbers(answer: str, sources_text: str) -> list[str]:
+    """Numbers in the answer that do not occur in any source (list numbering and [n] citations ignored).
+    Arabic-Indic digits, Arabic decimal/thousands signs and thousands commas are normalized on both sides."""
+    body = _CITE.sub("", normalize_display(answer).replace("٫", ".").replace("٬", ","))
+    body = re.sub(r"(?m)^\s*\d+\s*[.)\-–]\s*", "", body)
+    src = normalize_display(sources_text).replace("٫", ".").replace("٬", ",")
+    known = {_num(n) for n in _NUM.findall(src)}
+    return [n for n in _NUM.findall(body) if _num(n) not in known]
+
+
+def drop_number_sentences(answer: str, bad: list[str]) -> str:
+    """Remove every sentence (or list line) that contains one of the unsupported numbers."""
+    bad_values = {_num(n) for n in bad}
+    kept_lines = []
+    for line in answer.splitlines():
+        if not line.strip():
+            kept_lines.append("")
+            continue
+        marker = re.match(r"\s*(?:\d+\s*[.)\-–]|[-*•])\s+", line)       # list marker stays with its line
+        prefix, rest = (marker.group(0), line[marker.end():]) if marker else ("", line)
+        parts = [s for s in _SENTENCE_END.split(rest)
+                 if not {_num(n) for n in _NUM.findall(_CITE.sub("", normalize_display(s)))} & bad_values]
+        if " ".join(parts).strip():
+            kept_lines.append(prefix + " ".join(parts))
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(kept_lines)).strip()

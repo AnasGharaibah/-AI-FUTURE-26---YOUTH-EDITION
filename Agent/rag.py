@@ -12,7 +12,7 @@ import re
 import time
 from collections import deque
 
-from DB.arabic import is_arabic, normalize_display, normalize_search
+from DB.arabic import check_numbers, drop_number_sentences, is_arabic, normalize_display, normalize_search  # noqa: F401
 from DB.pipeline import Pipeline
 
 from . import llm
@@ -33,7 +33,6 @@ NUMBER_NOTE_AR = "ملاحظة: يرجى التحقق من الرسوم والم
 NUMBER_NOTE_EN = "Note: please verify fees and durations with the official source."
 
 _CITE = re.compile(r"\[(\d+)\]")
-_NUM = re.compile(r"(?<![\w.])\d+(?:[.,]\d+)*(?![\w])")
 _SENTENCE = re.compile(r"(?<=[.!?؟])\s+")
 # TODO(#15): _history grows with every thread_id and is never pruned - fine for the terminal chat, but a
 #            long-running server should cap the number of threads (LRU) or expire idle ones.
@@ -79,39 +78,6 @@ def _sources_block(hits) -> str:
         seen.add(key)
         blocks.append(f"[{i}] ({Pipeline.cite(h)} | {h['section'] or '-'})\n{body}")
     return "\n\n".join(blocks)
-
-
-def _num(n: str) -> str:
-    """'1,000' -> '1000', '٢٫٥' -> '2.5', '25.0' -> '25': one spelling per value."""
-    n = normalize_display(n).replace("٫", ".").replace("٬", "").replace(",", "")
-    return n[:-2] if n.endswith(".0") else n
-
-
-def check_numbers(answer: str, sources_text: str) -> list[str]:
-    """Numbers in the answer that do not occur in any source (list numbering and [n] citations ignored).
-    Arabic-Indic digits, Arabic decimal/thousands signs and thousands commas are normalized on both sides."""
-    body = _CITE.sub("", normalize_display(answer).replace("٫", ".").replace("٬", ","))
-    body = re.sub(r"(?m)^\s*\d+\s*[.)\-–]\s*", "", body)
-    src = normalize_display(sources_text).replace("٫", ".").replace("٬", ",")
-    known = {_num(n) for n in _NUM.findall(src)}
-    return [n for n in _NUM.findall(body) if _num(n) not in known]
-
-
-def drop_number_sentences(answer: str, bad: list[str]) -> str:
-    """Remove every sentence (or list line) that contains one of the unsupported numbers."""
-    bad_values = {_num(n) for n in bad}
-    kept_lines = []
-    for line in answer.splitlines():
-        if not line.strip():
-            kept_lines.append("")
-            continue
-        marker = re.match(r"\s*(?:\d+\s*[.)\-–]|[-*•])\s+", line)       # list marker stays with its line
-        prefix, rest = (marker.group(0), line[marker.end():]) if marker else ("", line)
-        parts = [s for s in _SENTENCE.split(rest)
-                 if not {_num(n) for n in _NUM.findall(_CITE.sub("", normalize_display(s)))} & bad_values]
-        if " ".join(parts).strip():
-            kept_lines.append(prefix + " ".join(parts))
-    return re.sub(r"\n{3,}", "\n\n", "\n".join(kept_lines)).strip()
 
 
 def _messages(question: str, sources: str, history, reminder: str = "") -> list[dict]:

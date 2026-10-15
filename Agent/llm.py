@@ -49,21 +49,26 @@ def _call(fn, *a, **kw):
         raise
 
 
-def chat(messages: list[dict], model: str | None = None, max_tokens: int = 400, temperature: float | None = None) -> str:
-    """messages: [{"role": "system"|"user"|"assistant", "content": str}] -> reply text (thinking disabled)."""
+def chat(messages: list[dict], model: str | None = None, max_tokens: int = 400, temperature: float | None = None,
+         format: dict | str | None = None) -> str:
+    """messages: [{"role": "system"|"user"|"assistant", "content": str}] -> reply text (thinking disabled).
+    format: "json" or a JSON schema -> Ollama structured output (the reply is valid JSON)."""
     model = model or MODEL
     opts = {**OPTIONS, "num_predict": max_tokens}
     if temperature is not None:
         opts["temperature"] = temperature
     if is_hybrid_qwen3(model):
-        return _chatml_nothink(messages, model, opts)
+        return _chatml_nothink(messages, model, opts, format)
     kw = {} if model in _no_think else {"think": False}
+    if format is not None:
+        kw["format"] = format
     try:
         res = _call(_client().chat, model=model, messages=messages, options=opts, keep_alive=KEEP_ALIVE, **kw)
     except Exception as e:
         if kw and "think" in str(e).lower():        # model without thinking support: retry plainly
             _no_think.add(model)
-            res = _call(_client().chat, model=model, messages=messages, options=opts, keep_alive=KEEP_ALIVE)
+            kw.pop("think", None)
+            res = _call(_client().chat, model=model, messages=messages, options=opts, keep_alive=KEEP_ALIVE, **kw)
         elif "not found" in str(e).lower():
             raise RuntimeError(f"Model missing. Run: ollama pull {model}") from e
         else:
@@ -107,12 +112,12 @@ def chat_stream(messages: list[dict], model: str | None = None, max_tokens: int 
         raise
 
 
-def _chatml_nothink(messages, model, opts) -> str:
+def _chatml_nothink(messages, model, opts, format=None) -> str:
     """qwen3 here ignores think=False (the chat template never closes the think block), so build the ChatML prompt
     ourselves and pre-fill an empty <think></think> - the documented way to turn thinking off."""
     prompt = "".join(f"<|im_start|>{m['role']}\n{m['content']}<|im_end|>\n" for m in messages)
     prompt += "<|im_start|>assistant\n<think>\n\n</think>\n\n"
-    res = _call(_client().generate, model=model, prompt=prompt, raw=True, keep_alive=KEEP_ALIVE,
+    res = _call(_client().generate, model=model, prompt=prompt, raw=True, keep_alive=KEEP_ALIVE, format=format,
                 options={**opts, "stop": ["<|im_end|>"]})
     return re.sub(r"<think>.*?</think>", "", res["response"] or "", flags=re.S).strip()
 

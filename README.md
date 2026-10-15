@@ -61,7 +61,8 @@ uv run python -m DB.main ingest                    # parse + index data/raw   (a
 uv run python -m DB.main search "شو الأوراق المطلوبة لتجديد الجواز؟" [--rerank] [--no-rewrite]
 uv run python -m Agent.main                        # chat   (YOTH_MODEL=gemma3:4b to switch model)
 uv run python -m Agent.main --voice                # voice
-uv run python -m Agent.eval --tag mytest           # evaluate on questions_ar.csv   (--table compares saved runs)
+uv run python -m Agent.eval --modes rag,agent      # evaluate on questions_v1.csv + questions_v2.csv (--table compares runs)
+uv run python -m DB.main summaries [--force]       # per-document summaries + Service Map (also run by ingest)
 uv run pytest                                      # unit tests
 ```
 
@@ -69,7 +70,7 @@ Answer path (`Agent/rag.py`): follow-up -> standalone question -> MSA rewrite (d
 numbered sources -> LLM with the Arabic system prompt -> guard (missing `[n]` citation = one retry; numbers that are
 not in the sources are logged). `YOTH_MODE=agent` switches back to the old tool-calling agent.
 
-`samples_ar/` has four *fictional* sample documents; `questions_ar.csv` the evaluation questions.
+`samples_ar/` has four *fictional* sample documents; `questions_v1.csv` / `questions_v2.csv` the evaluation questions.
 
 ### Known limits
 - No OCR: scanned PDFs are reported as `empty` / `partial` in `data/parsed/_manifest.json`.
