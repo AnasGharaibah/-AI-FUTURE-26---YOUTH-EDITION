@@ -15,3 +15,14 @@ data/library.json
 data/summaries.json
 data/service_map.md
 voice_env/.venv/
+
+# competition runs (python main.py questions.json / python -m Agent.comp_eval)
+answers.json
+answers.debug.json
+*.tmp
+results/
+results_*.log
+chat_log.md
+chat_logs/
+answers_*.json
+run_*.log

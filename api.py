@@ -3,10 +3,13 @@
     uv run uvicorn api:app            -> http://127.0.0.1:8000        (API docs at /docs)
 
 Documents live in data/raw/ (the library); uploads are saved there and indexed with DB.pipeline.
-Answers come from Agent.rag. Folders and stars are kept in data/library.json.
+Answers come from the competition pipeline (Agent.competition: the 12 service documents, command-r7b-arabic) by
+default; YOTH_MODE=agent or YOTH_MODE=rag switches the chat back to the search pipelines over the whole library.
+Folders and stars are kept in data/library.json.
 """
 import hashlib
 import json
+import os
 import re
 import threading
 from contextlib import asynccontextmanager
@@ -18,9 +21,9 @@ from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from Agent import agent, brain, llm, rag
+from Agent import agent, brain, competition, llm, ollama_http, rag
 from Agent.context import NAME
-from DB.arabic import is_arabic, normalize_search, tokens
+from DB.arabic import is_arabic, normalize_display, normalize_search, tokens
 from DB.parse import PAGE_RE, Parser
 
 ROOT = Path(__file__).resolve().parent
@@ -30,6 +33,7 @@ PARSED = ROOT / "data/parsed"
 LIB_PATH = ROOT / "data/library.json"
 SUPPORTED = Parser.MARKER_EXT | Parser.OFFICE_EXT | Parser.PLAIN_EXT
 LOCK = threading.Lock()                       # one library write / re-index at a time
+CHAT_MODE = os.getenv("YOTH_MODE", "competition")   # competition (default) | agent | rag
 
 @asynccontextmanager
 async def lifespan(_app):
@@ -73,7 +77,17 @@ def _pages(name: str, mtime: float) -> list[str]:
 def pages(name: str) -> list[str]:
     """Text of each page of a parsed document (chunk page N = pages[N - 1]; no page markers = one page)."""
     p = PARSED / f"{name}.md"
-    return _pages(name, p.stat().st_mtime) if p.exists() else []
+    if p.exists():
+        return _pages(name, p.stat().st_mtime)
+    raw = RAW / name                          # not ingested yet: plain-text files are shown as they are
+    if raw.suffix.lower() in (".txt", ".md") and raw.exists():
+        return [_raw_text(name, raw.stat().st_mtime)]
+    return []
+
+
+@lru_cache(maxsize=64)
+def _raw_text(name: str, mtime: float) -> str:
+    return normalize_display((RAW / name).read_text(encoding="utf-8", errors="replace"))
 
 
 def raw_files() -> list[Path]:
@@ -379,6 +393,9 @@ def chat(req: ChatIn):
     def events():
         try:
             q = req.question.strip()
+            if CHAT_MODE == "competition":
+                yield from _competition_events(q, _pairs(req.history))
+                return
             if brain.MODE == "rag" and _CASUAL.match(normalize_search(q)):    # agent mode: the router handles it
                 ar = is_arabic(q)
                 reply = llm.chat([
@@ -419,6 +436,40 @@ def chat(req: ChatIn):
             yield _line({"type": "error", "text": f"{e} (is Ollama running?)"})
 
     return StreamingResponse(events(), media_type="application/x-ndjson")
+
+
+def _service_source(n: int, s: dict) -> dict:
+    """A cited snippet of the competition pipeline as a UI source: opens data/raw/<service>.txt at the snippet."""
+    name = f"{s['sid']}.txt"
+    page = (pages(name) or [""])[0]
+    start, end = _locate(page, s["text"])
+    return {"n": n, "doc_id": doc_id(name), "file": name, "page": 1, "section": f"{s['service']} | {s['field']}",
+            "start": start, "end": end, "quote": s["text"]}
+
+
+def _competition_events(q: str, history: list[tuple[str, str]]):
+    """The competition pipeline (the same answers as main.py) as the event stream the page understands.
+    Not streamed token by token: the guards may rewrite the draft, so the checked answer is sent once."""
+    if _CASUAL.match(normalize_search(q)):
+        reply = ollama_http.chat([
+            {"role": "system", "content": "أنت مساعد رسمي لخدمات جواز السفر ودفتر العائلة والبطاقة الذكية في الأردن. "
+             "رد على هذه التحية أو الشكر بجملة قصيرة ولطيفة بلغة المستخدم، واذكر أنك تجيب عن هذه الخدمات فقط."},
+            {"role": "user", "content": q}], kind="greeting", num_predict=80)
+        yield _line({"type": "token", "text": normalize_display(reply)})
+        yield _line({"type": "done", "mode": "chat"})
+        return
+    bot = competition.Chat()
+    bot.restore(history[-competition.HISTORY_TURNS - 1:])
+    res = bot.ask(q)
+    d = res["debug"]
+    sources = [_service_source(i, s) for i, s in enumerate(res["sources"], 1)]
+    yield _line({"type": "trace", "trace": [], "query": d.get("standalone") or q})
+    yield _line({"type": "sources", "sources": sources})
+    yield _line({"type": "final", "text": res["cited_answer"]})
+    if sources:
+        yield _line({"type": "verification",
+                     "items": _verify(res["cited_answer"], [{"n": x["n"], "text": x["quote"]} for x in sources])})
+    yield _line({"type": "done", "mode": "documents", "found": bool(sources)})
 
 
 def _agent_events(q: str, scope: list[str] | None, history: list[tuple[str, str]]):
@@ -593,7 +644,8 @@ def tts(body: TTSIn):
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "model": llm.MODEL}
+    return {"status": "ok", "mode": CHAT_MODE,
+            "model": ollama_http.MODEL if CHAT_MODE == "competition" else llm.MODEL}
 
 
 app.mount("/", StaticFiles(directory=UI_DIR, html=True), name="ui")
