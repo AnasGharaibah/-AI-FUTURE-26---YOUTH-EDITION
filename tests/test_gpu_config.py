@@ -5,11 +5,14 @@ from DB import pipeline as P
 
 def test_reranker_auto_by_vram(monkeypatch):
     pipe = P.Pipeline.__new__(P.Pipeline)                       # no Chroma needed for this check
-    pipe.cfg, pipe._auto_rerank = dict(P.DEFAULTS), None
+    pipe.cfg, pipe._auto_rerank = dict(P.DEFAULTS, reranker_device="cuda"), None
     monkeypatch.setattr(P, "gpu_vram_gb", lambda: 8.59)          # RTX 4060 Laptop: 8188 MiB
     assert pipe.reranker_enabled()
     pipe._auto_rerank = None
     monkeypatch.setattr(P, "gpu_vram_gb", lambda: 6.4)
+    assert not pipe.reranker_enabled()
+    pipe.cfg["reranker_device"], pipe._auto_rerank = "cpu", None   # 25-50 s per search on the CPU: auto = off
+    monkeypatch.setattr(P, "gpu_vram_gb", lambda: 8.59)
     assert not pipe.reranker_enabled()
     pipe.cfg["use_reranker"] = True                             # explicit setting wins
     assert pipe.reranker_enabled()
