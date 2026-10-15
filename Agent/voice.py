@@ -1,11 +1,12 @@
-"""Voice in/out.   STT: mlx-whisper (Apple Silicon) / faster-whisper on CUDA (Windows, Linux; CPU int8 fallback).
-TTS: macOS `say` (Majed for Arabic) / Windows speech voices (Hoda / Naayf for Arabic). Arabic is not spoken
-when no Arabic voice is installed (check_voices() warns at startup).
+"""Voice in/out.   STT: faster-whisper large-v3-turbo on CUDA (int8_float16; CPU int8 fallback).
+TTS: 1) OmniVoice worker (voice_env/tts_server.py, CUDA, voice cloning from voices/*_ref.wav)
+     2) fallback, always available: Windows OneCore voices (Hoda / Naayf for Arabic) / macOS `say`.
+Arabic is never read by an English voice (check_voices() warns at startup).
 
     from Agent.voice import listen, transcribe, speak
-    listen(seconds=None, language="ar")      # mic -> {"text", "language", "seconds"}  (stops on silence)
-    transcribe("q.wav", language=None)       # file / numpy array
-    speak("مرحبا", block=True)               # -> engine used: "say" | "windows" | "no-arabic-voice" | "none"
+    listen(seconds=None, language="ar")      # mic -> {"text", "raw", "language", "seconds"}  (stops on silence)
+    transcribe("q.wav", language=None)       # file / bytes / numpy array; None = auto-detect (mixed ar/en)
+    speak("مرحبا", block=True)               # -> engines used: "omnivoice" | "windows" | "omnivoice+windows" | ...
 """
 import io
 import logging
@@ -29,20 +30,24 @@ IS_MAC = sys.platform == "darwin"
 
 CONFIG = {
     # --- STT
-    "stt_model": "mlx-community/whisper-large-v3-turbo",      # light option: mlx-community/whisper-small-mlx
-    "whisper_model": "large-v3-turbo",                         # faster-whisper (Windows / Linux); light: "small"
+    "whisper_model": "large-v3-turbo",                         # faster-whisper; light option: "small"
     "whisper_device": "auto",                                  # "auto" (cuda if available) | "cpu" | "cuda"
-    "whisper_compute_cuda": "float16",
+    "whisper_compute_cuda": "int8_float16",                    # ~0.8 GB VRAM
     "whisper_compute_cpu": "int8",
+    "beam_size": 5,
     "stt_language": "ar",                                      # "ar" | "en" | None (auto, mixed speech)
     "sample_rate": 16000,
     "silence_rms": 0.01,                                       # RMS below this counts as silence
     "silence_seconds": 1.2,                                    # stop after this much silence
-    "max_record_seconds": 30,
+    "max_record_seconds": 15,
     "min_speech_seconds": 0.3,
     # --- TTS
+    "tts_engine": "auto",                                      # "auto" (OmniVoice -> system voice) | "omnivoice" | "system"
+    "tts_url": os.getenv("YOTH_TTS_URL", "http://127.0.0.1:8765"),   # voice_env/tts_server.py
+    "tts_timeout": 30,
     "max_spoken_chars": 300,
     "max_spoken_sentences": 3,
+    "chunk_chars": 80,                                         # sentences longer than this are also cut at "،"
     "say_voices": {"ar": "Majed", "en": "Samantha"},
     "arabic_ratio": 0.30,
 }
@@ -99,14 +104,6 @@ def _load_audio(audio) -> np.ndarray:
                              np.arange(len(data)), data).astype(np.float32)
         return data
     except Exception:                    # webm / mp3 / m4a / anything soundfile can't read
-        if IS_MAC:                       # ffmpeg
-            from mlx_whisper.audio import load_audio
-            if isinstance(audio, bytes):
-                with tempfile.TemporaryDirectory() as d:
-                    p = Path(d) / "audio.bin"
-                    p.write_bytes(audio)
-                    return load_audio(str(p))
-            return load_audio(str(audio))
         return _decode_av(io.BytesIO(audio) if isinstance(audio, bytes) else str(audio))
 
 
@@ -146,10 +143,22 @@ def _cuda_dlls():
         log.warning("could not add torch's CUDA libraries to the DLL path: %s", e)
 
 
-# TODO(#14): two concurrent first requests can both load the model (lru_cache is not a lock) - guard with a Lock.
-@lru_cache(maxsize=1)
+_whisper_model = None
+_whisper_lock = threading.Lock()
+
+
 def _whisper():
-    """faster-whisper (large-v3-turbo). GPU: float16; CPU fallback: int8. Downloaded on first use (~1.6 GB)."""
+    """The faster-whisper model, loaded once (thread-safe: two first requests never load it twice)."""
+    global _whisper_model
+    if _whisper_model is None:
+        with _whisper_lock:
+            if _whisper_model is None:
+                _whisper_model = _load_whisper()
+    return _whisper_model
+
+
+def _load_whisper():
+    """faster-whisper large-v3-turbo. GPU: int8_float16; CPU fallback: int8. Downloaded on first use (~1.6 GB)."""
     device = CONFIG["whisper_device"]
     if device == "auto":
         device = cuda_device()
@@ -162,34 +171,14 @@ def _whisper():
     except Exception as e:
         if device != "cuda":
             raise
-        log.warning("Whisper on CUDA failed (%s) - using the CPU (int8)", e)
+        log.warning("Whisper on CUDA failed (%s) - using the CPU (%s)", e, CONFIG["whisper_compute_cpu"])
         return WhisperModel(CONFIG["whisper_model"], device="cpu", compute_type=CONFIG["whisper_compute_cpu"])
 
 
 def _stt(data: np.ndarray, language: str | None) -> dict:
-    if IS_MAC:
-        import mlx_whisper
-        return mlx_whisper.transcribe(data, path_or_hf_repo=CONFIG["stt_model"], language=language,
-                                      task="transcribe", condition_on_previous_text=False, verbose=None)
-    segments, info = _whisper().transcribe(data, language=language, task="transcribe",
-                                           condition_on_previous_text=False, vad_filter=True)
+    segments, info = _whisper().transcribe(data, language=language, task="transcribe", beam_size=CONFIG["beam_size"],
+                                           vad_filter=True, condition_on_previous_text=False)
     return {"text": " ".join(s.text.strip() for s in segments), "language": info.language}
-
-
-def transcribe(audio, language: str | None = "ar") -> dict:
-    """audio: file path (.wav/.mp3/.m4a), raw bytes or numpy array. language: "ar" | "en" | None (auto).
-    Returns {"text", "language", "seconds"}; empty text (never an exception) when nothing was said."""
-    t0 = time.time()
-    try:
-        data = _load_audio(audio)
-    except Exception as e:
-        log.warning("could not read audio: %s", e)
-        return {"text": "", "language": language or "", "seconds": round(time.time() - t0, 2)}
-    if len(data) < CONFIG["min_speech_seconds"] * CONFIG["sample_rate"] or _rms(data) < 1e-4:
-        return {"text": "", "language": language or "", "seconds": round(time.time() - t0, 2)}
-    res = _stt(data, language)
-    return {"text": normalize_display(res.get("text") or ""), "language": res.get("language") or language or "",
-            "seconds": round(time.time() - t0, 2)}
 
 
 FROM_CONFIG = "config"          # default language marker: read CONFIG["stt_language"] when called, not at import
@@ -197,6 +186,26 @@ FROM_CONFIG = "config"          # default language marker: read CONFIG["stt_lang
 
 def _language(language):
     return CONFIG["stt_language"] if language == FROM_CONFIG else language
+
+
+def transcribe(audio, language: str | None = FROM_CONFIG) -> dict:
+    """audio: file path (.wav/.mp3/.m4a/.webm), raw bytes or numpy array.
+    language: "ar" | "en" | None (auto-detect, for mixed Arabic/English); default CONFIG["stt_language"].
+    Returns {"text" (normalize_display), "raw" (as Whisper wrote it), "language", "seconds"};
+    empty text (never an exception) when nothing was said."""
+    language = _language(language)
+    t0 = time.time()
+    try:
+        data = _load_audio(audio)
+    except Exception as e:
+        log.warning("could not read audio: %s", e)
+        return {"text": "", "raw": "", "language": language or "", "seconds": round(time.time() - t0, 2)}
+    if len(data) < CONFIG["min_speech_seconds"] * CONFIG["sample_rate"] or _rms(data) < 1e-4:
+        return {"text": "", "raw": "", "language": language or "", "seconds": round(time.time() - t0, 2)}
+    res = _stt(data, language)
+    raw = (res.get("text") or "").strip()
+    return {"text": normalize_display(raw), "raw": raw, "language": res.get("language") or language or "",
+            "seconds": round(time.time() - t0, 2)}
 
 
 def listen(seconds: float | None = None, language: str | None = FROM_CONFIG) -> dict:
@@ -210,7 +219,7 @@ def listen(seconds: float | None = None, language: str | None = FROM_CONFIG) -> 
 
 # =============================================================== TTS
 _CITE = re.compile(r"\s*(\[\s*\d+(?:\s*[,\-–]\s*\d+)*\s*\])+")
-_URL = re.compile(r"https?://\S+|www\.\S+")
+_URL = re.compile(r"(?:\b(?:see|visit|at)\s+|(?:راجع|انظر|زر|زوروا)\s+)?(?:https?://\S+|www\.\S+)", re.I)
 _SENT = re.compile(r"(?<=[.!?؟۔。])\s+|\n+")
 
 
@@ -413,51 +422,125 @@ def _say_voice(lang: str) -> str | None:
     return preferred if preferred in names else (names[0] if names else None)
 
 
-def synthesize(text: str, language: str | None = None, clean: bool = True):
-    """text -> (wav_bytes | None, engine, spoken_text). Arabic text is NOT spoken when no Arabic voice is installed
-    (an English voice reading Arabic is unintelligible): returns (None, "no-arabic-voice", spoken)."""
-    spoken = clean_text(text) if clean else text.strip()
-    if not spoken:
-        return None, "none", ""
-    lang = language or detect_language(spoken)
+# ---------------------------------------------------------------- engines
+def _omnivoice(text: str, lang: str) -> bytes:
+    """Engine 1: the OmniVoice worker (voice_env/tts_server.py, own env, keeps the model loaded on the GPU)."""
+    import json
+    import urllib.request
+    req = urllib.request.Request(CONFIG["tts_url"] + "/tts", data=json.dumps({"text": text, "language": lang}).encode(),
+                                 headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=CONFIG["tts_timeout"]) as r:
+        return r.read()
+
+
+def _system_voice(text: str, lang: str) -> tuple[bytes | None, str]:
+    """Engine 2 (always available): Windows OneCore voices (Hoda / Naayf) or macOS `say`."""
     if lang == "ar" and not has_voice("ar"):
-        log.warning("no Arabic TTS voice installed - not speaking: %r", spoken[:60])
-        return None, "no-arabic-voice", spoken
+        log.warning("no Arabic system voice installed - not speaking: %r", text[:60])
+        return None, "no-arabic-voice"
     with tempfile.TemporaryDirectory() as d:
         if sys.platform == "win32":
             src, wav = Path(d) / "in.txt", Path(d) / "out.wav"
-            src.write_text(spoken, encoding="utf-8")
+            src.write_text(text, encoding="utf-8")
             _powershell(_WINDOWS_TTS_PS, YOTH_TTS_LANG=lang, YOTH_TTS_IN=str(src), YOTH_TTS_OUT=str(wav))
-            return wav.read_bytes(), "windows", spoken
-        aiff, wav = f"{d}/o.aiff", f"{d}/o.wav"
+            return wav.read_bytes(), "windows"
+        aiff, wav = Path(d) / "o.aiff", Path(d) / "o.wav"
         voice = _say_voice(lang)
-        subprocess.run(["say", *(["-v", voice] if voice else []), "-o", aiff, spoken], check=True)
-        subprocess.run(["afconvert", "-f", "WAVE", "-d", "LEI16@22050", aiff, wav], check=True)
-        return Path(wav).read_bytes(), "say", spoken
+        subprocess.run(["say", *(["-v", voice] if voice else []), "-o", str(aiff), text], check=True)
+        subprocess.run(["afconvert", "-f", "WAVE", "-d", "LEI16@22050", str(aiff), str(wav)], check=True)
+        return wav.read_bytes(), "say"
+
+
+def _synth(text: str, lang: str) -> tuple[bytes | None, str]:
+    """One piece of text -> (wav, engine). OmniVoice first (unless tts_engine="system"); any error -> system voice."""
+    if CONFIG["tts_engine"] in ("auto", "omnivoice"):
+        try:
+            return _omnivoice(text, lang), "omnivoice"
+        except Exception as e:
+            log.warning("OmniVoice unavailable (%s) - falling back to the system voice", type(e).__name__)
+            if CONFIG["tts_engine"] == "omnivoice":
+                raise
+    return _system_voice(text, lang)
+
+
+def speech_chunks(text: str, language: str | None = None, clean: bool = True) -> list[tuple[str, str]]:
+    """Cleaned text -> [(piece, lang)] to synthesize one after another: sentences (. ؟ ! ?), long ones also cut at
+    the Arabic / Latin comma, so the first audio is ready quickly."""
+    spoken = clean_text(text) if clean else text.strip()
+    pieces = []
+    for sent in [x.strip() for x in _SENT.split(spoken) if x.strip()]:
+        parts = re.split(r"(?<=[،,])\s+", sent) if len(sent) > CONFIG["chunk_chars"] else [sent]
+        pieces += [x.strip() for x in parts if x.strip()]
+    return [(x, language or detect_language(x)) for x in pieces]
+
+
+def synthesize(text: str, language: str | None = None, clean: bool = True):
+    """text -> (wav_bytes | None, engine, spoken_text) in one piece (the web API). Arabic is never read by an
+    English voice: with no OmniVoice and no Arabic system voice -> (None, "no-arabic-voice", spoken)."""
+    spoken = clean_text(text) if clean else text.strip()
+    if not spoken:
+        return None, "none", ""
+    wav, engine = _synth(spoken, language or detect_language(spoken))
+    log.info("TTS engine: %s | %r", engine, spoken[:60])
+    return wav, engine, spoken
+
+
+last_speak = {}                  # stats of the last speak(): engines, time_to_first_audio, pieces
 
 
 def speak(text: str, language: str | None = None, block: bool = True, save_to: str | None = None) -> str:
-    """Clean the text, synthesize it, play it (and optionally save a .wav). Returns the engine used.
-    Never raises: if every engine fails it returns "none"."""
-    try:
-        wav, engine, spoken = synthesize(text, language)
-    except Exception as e:
-        log.error("TTS failed: %s", e)
+    """Clean the text and play it piece by piece: piece 1 starts playing while the next pieces are synthesized
+    (lower time-to-first-audio). Temp files are deleted after playback. Returns the engine(s) used, e.g.
+    "omnivoice" or "omnivoice+windows" after a fallback. Never raises: if every engine fails it returns "none".
+    save_to: also write the first piece's wav there (debugging)."""
+    import queue
+    t0 = time.time()
+    chunks = speech_chunks(text, language)
+    if not chunks:
         return "none"
-    if wav is None:
-        if engine == "no-arabic-voice":
-            print("   [tts: skipped - no Arabic voice installed]")
-        return engine
-    log.info("TTS engine: %s | %r", engine, spoken)
-    print(f"   [tts: {engine}]")
-    if save_to:
-        path = save_to
+    q, engines, stats = queue.Queue(), [], {"pieces": len(chunks), "time_to_first_audio": None}
+
+    def produce():
+        for piece, lang in chunks:
+            try:
+                wav, engine = _synth(piece, lang)
+            except Exception as e:
+                log.error("TTS failed for %r: %s", piece[:40], e)
+                wav, engine = None, "none"
+            engines.append(engine)
+            log.info("TTS engine: %s | %r", engine, piece[:60])
+            q.put(wav)
+        q.put(StopIteration)
+
+    def consume():
+        first = True
+        while (wav := q.get()) is not StopIteration:
+            if not wav:
+                continue
+            fd, path = tempfile.mkstemp(suffix=".wav", prefix="yoth-tts-")
+            os.close(fd)
+            Path(path).write_bytes(wav)
+            if first and save_to:
+                Path(save_to).write_bytes(wav)
+            if first:
+                stats["time_to_first_audio"] = round(time.time() - t0, 2)
+                first = False
+            _play_wav(path, True, delete_after=True)
+        stats["total"] = round(time.time() - t0, 2)
+
+    threading.Thread(target=produce, daemon=True).start()
+    if block:
+        consume()
     else:
-        fd, path = tempfile.mkstemp(suffix=".wav", prefix="yoth-tts-")
-        os.close(fd)
-    Path(path).write_bytes(wav)
-    _play_wav(path, block, delete_after=not save_to)      # temp file is removed once played
-    return engine
+        threading.Thread(target=consume, daemon=True).start()
+    used = "+".join(dict.fromkeys(e for e in engines if e)) or "none"
+    stats["engines"] = engines
+    last_speak.clear()
+    last_speak.update(stats)
+    if "no-arabic-voice" in engines:
+        print("   [tts: skipped Arabic - no Arabic voice installed and OmniVoice not running]")
+    print(f"   [tts: {used}]")
+    return used
 
 
 # =============================================================== loop

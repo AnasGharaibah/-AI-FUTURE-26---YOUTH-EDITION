@@ -14,3 +14,4 @@ data/embed_cache.jsonl
 data/library.json
 data/summaries.json
 data/service_map.md
+voice_env/.venv/
