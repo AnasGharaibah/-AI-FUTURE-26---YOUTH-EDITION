@@ -1,11 +1,13 @@
 """Step 2 - Markdown -> chunks.
 
+
 Two algorithms:
   "structure" (default, best for unknown documents)
       follows headings / tables / lists / slides / pages, picks a size per
       document type, repeats table headers, adds a file > section context line,
       keeps a parent section for every chunk
   "fixed"     plain sliding window (baseline to compare against)
+
 
 Usage:
     from DB.chunks import Chunker
