@@ -83,10 +83,24 @@ def test_route_asks_when_the_llm_guesses_every_document(monkeypatch):
     assert r.needs_clarification and r.services == []
 
 
-def test_follow_up_falls_back_to_previous_document(monkeypatch):
-    monkeypatch.setattr(router, "llm_route", lambda *a, **k: {})            # LLM unusable
-    r = router.route("وإذا كان تالف؟", [("كم رسوم تجديد الجواز؟", "50 دينار")], ["passport_renewal"])
-    assert r.services == ["passport_damaged"]
+@pytest.mark.parametrize("q, state, services", [
+    ("وإذا كان تالف؟", (["passport"], ["renewal"]), ["passport_damaged"]),          # only the situation changes
+    ("وللهوية؟", (["family_book"], ["damaged"]), ["id_card_damaged"]),              # only the document changes
+    ("للبطاقة الذكية", ([], ["lost"]), ["id_card_lost"]),                            # answer to "which document?"
+    ("وإذا صارت تالت مرة؟", (["passport"], ["lost"]), ["passport_lost"]),             # loss count, still lost
+    ("وكم بكلف إذا أول مرة؟", (["id_card"], ["lost"]), ["id_card_lost"]),             # "أول مرة" = first loss
+    ("ووين بقدم؟", (["family_book"], ["renewal"]), ["family_book_renewal"]),         # nothing named: both kept
+])
+def test_follow_up_keeps_the_slots_it_does_not_name(monkeypatch, q, state, services):
+    monkeypatch.setattr(router, "llm_route", lambda *a, **k: pytest.fail("no LLM call for a follow-up"))
+    r = router.route(q, [("سؤال سابق", "جواب")], state)
+    assert r.services == services and r.source == "state"
+
+
+def test_first_message_without_a_document_is_asked_back(monkeypatch):
+    monkeypatch.setattr(router, "llm_route", lambda *a, **k: {"in_scope": True, "services": ["passport_first_issue"]})
+    r = router.route("وكم بتكلف؟")
+    assert r.needs_clarification and r.services == []
 
 
 def test_citations():
@@ -121,7 +135,7 @@ def test_situation_hints():
     assert situation_hints("ضاع جوازي وأنا برا الأردن") == ["المستخدم خارج الأردن."]
     assert situation_hints("كم رسوم الجواز؟") == []
     assert situation_hints("عمري 25 وجوازي انتهى")[1] == "الوثيقة منتهية الصلاحية."
-    assert situation_hints("دفتر العائلة غير منتهي") == []
+    assert situation_hints("دفتر العائلة غير منتهي") == ["الوثيقة ما زالت سارية (غير منتهية)."]
     assert "المرة الثانية" in situation_hints("ضاع للمرة الثانية بعد سنتين من أول مرة")[0]
     assert situation_hints("بدي أطلع جواز لأول مرة") == []                 # not a loss count
 
@@ -177,15 +191,55 @@ def test_one_question_and_dangling_line():
     assert drop_dangling("تحتاج:\n- البطاقة\n\nفإن المبلغ المطلوب هو:") == "تحتاج:\n- البطاقة"
 
 
-def test_ask_missing_only_asks_what_is_not_known():
-    from Agent.competition import ask_missing, chat_hint_map
-    fees = snippets(["passport_renewal"], ["الرسوم", "ملاحظات"])
-    listing = "- 20 دينار.\n- 25 دينار.\n- 50 دينار.\n- 100 دينار."
-    assert ask_missing(listing, fees, set()).endswith(
-        "كم عمرك، وهل الوثيقة منتهية أو باقٍ على انتهائها أقل من 180 يوماً، وهل أنت داخل الأردن أم خارجه؟")
-    known = set(chat_hint_map(["عمري 20 وانا بالاردن وجوازي مخلص ورقه"]))
-    assert ask_missing(listing, fees, known) == listing
-    assert ask_missing("الرسوم 50 دينار.", fees, set()) == "الرسوم 50 دينار."
+def test_no_question_back_when_the_document_is_known():
+    from Agent.competition import strip_questions
+    assert strip_questions("الرسوم 50 دينار [3].\n\nهل جوازك منتهي؟") == "الرسوم 50 دينار [3]."
+    assert strip_questions("الرسوم 50 دينار [3]. هل أنت داخل الأردن؟") == "الرسوم 50 دينار [3]."
+    assert strip_questions("الرسوم 50 دينار [3].") == "الرسوم 50 دينار [3]."
+
+
+def test_asked_back_is_retried_then_declined(monkeypatch):
+    replies = iter(["هل جوازك منتهي؟", "هل أنت داخل الأردن؟"])
+    monkeypatch.setattr(competition, "_generate", lambda *a, **k: next(replies))
+    dbg = {"flags": []}
+    ans, ctx = competition.Chat()._answer("كم مدة صلاحية الجواز؟", "x", ["passport_renewal"], dbg)
+    assert ans == competition.NOT_FOUND and ctx == [] and "retry_asked_back" in dbg["flags"]
+
+
+def test_only_the_fee_lines_that_apply_are_sent(monkeypatch):
+    prompts = []
+
+    def fake_chat(messages, **kw):
+        import re
+        prompts.append(messages[-1]["content"])
+        fee = re.search(r"\[(\d+)\] \(تجديد جواز السفر \| الرسوم\)", prompts[-1]).group(1)
+        note = re.search(r"\[(\d+)\] \(تجديد جواز السفر \| ملاحظات\)\n[^\n]*المستعجلة", prompts[-1]).group(1)
+        return f"الرسوم 50 دينار [{fee}] ويضاف 25 دينار [{note}]، المجموع 75 دينار."
+    monkeypatch.setattr(competition.ollama_http, "chat", fake_chat)
+    res = competition.Chat().ask("عمري 40 وجوازي منتهي وبدي أجدده بمكتب الخدمة المستعجلة، قديش المجموع؟")
+    sources = prompts[0].split("سؤال المستخدم")[0]
+    assert "فوق سن السادسة عشر" in sources and "دون السادسة عشر" not in sources and "غير المنتهي" not in sources
+    assert "مكتب الخدمة المستعجلة" in sources                                   # notes always kept
+    assert "75" in res["answer"]                                                  # a sum of the selected amounts
+    assert [c.split(":")[0] for c in res["contexts"]] == ["تجديد جواز السفر - الرسوم", "تجديد جواز السفر - ملاحظات"]
+
+
+def test_long_story_is_split_per_service(monkeypatch):
+    prompts = []
+
+    def fake_chat(messages, **kw):
+        prompts.append(messages[-1]["content"])
+        return "الرسوم [1]."
+    monkeypatch.setattr(competition.ollama_http, "chat", fake_chat)
+    res = competition.Chat().ask("مرحبا، ابني عمره 10 سنين وبدنا نطلعله جواز سفر لأول مرة عشان نسافر. "
+                                 "وأخوي ساكن بألمانيا وجوازه ضايل عليه شهرين وبده يجدده من السفارة. "
+                                 "قديش رح ندفع على كل وحدة؟")
+    assert res["debug"]["route"] == ["passport_first_issue", "passport_renewal"]
+    assert len(prompts) == 2 and "story:2" in res["debug"]["flags"]
+    son, brother = prompts
+    assert "دون سن 16" in son and "داخل البلاد" not in son and "خارج البلاد" not in son.split("سؤال المستخدم")[0]
+    assert "خارج البلاد" in brother and "ألمانيا" in brother and "عمره 10" not in brother
+    assert res["answer"].startswith("• جواز سفر لأول مرة:")
 
 
 def test_chat_remembers_the_users_situation(monkeypatch):

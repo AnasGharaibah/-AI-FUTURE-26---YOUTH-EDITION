@@ -14,10 +14,10 @@ import logging
 import re
 from dataclasses import dataclass, field
 
-from DB.arabic import _DIACRITICS, _SEARCH_MAP, normalize_search
+from DB.arabic import _DIACRITICS, _SEARCH_MAP, normalize_display, normalize_search
 
 from . import ollama_http
-from .services import DOCS, SERVICE_IDS, SITUATIONS
+from .services import BUILTIN_SERVICES, DOC_EXTRA_WORDS, DOCS, NAMES, SERVICE_IDS, SITUATIONS, docs_or
 
 log = logging.getLogger("yoth.router")
 
@@ -39,6 +39,9 @@ DOC_WORDS = {
 }
 # document words inside other things: "بطاقة الجسور", "الهوية الفلسطينية", "الهويات المقدسية"
 NOT_DOC = _rx(r"بطاق\S* (إحصاءات |احصاءات )?(ال)?جسور", r"هوي\S* (ال)?(فلسطيني|مقدسي|إسرائيلي)\S*")
+# documents added with `python -m Agent.add_document` (data/services.json)
+EXTRA_DOC_WORDS = {d: _rx(*(re.escape(w) for w in words)) for d, words in DOC_EXTRA_WORDS.items()}
+DOC_WORDS.update(EXTRA_DOC_WORDS)
 
 SIT_STRONG = {
     "lost": _rx("فاقد", "فقدان", "فقد", "ضاع", "ضايع", "ضيعت", "ضيع", "انسرق", "سرق", "مسروق", "مفقود",
@@ -54,7 +57,7 @@ SIT_WEAK = {      # only used when no strong situation word is present; renewal 
     "renewal": _rx("منتهي", "انتهى", "انتهت", "انتهاء", "خلص", "خلصت", "ساري", "صلاحية", "امتلأ", "امتلأت",
                    "ممتلئ", "مليان", "expired"),
     "first_issue": _rx("إصدار", "اصدار", "استخراج", "أطلع", "اطلع", "بطلع", "يطلع", "تطلع", "نطلع", "طلع", "أحصل",
-                       "احصل", "الحصول", "فتح دفتر", "فتحت دفتر", "افتح دفتر", "فتح سجل", "فتح قيد", "issue", "get a"),
+                       "احصل", "الحصول", r"فتح\S* (ال)?دفتر", r"فتح\S* (ال)?سجل", r"فتح\S* (ال)?قيد", "نطلع دفتر", "طلعنا دفتر", "issue", "get a"),
 }
 COMPARE = _rx("أغلى", "اغلى", "أرخص", "ارخص", "الفرق", r"\bفرق\b", "مقارنة", "أيهما", "ايهما", r"\bأيها\b",
               r"\bولا\b", r"\bوال\b", r"\bأم\b", r"\bأو\b", "compare", "difference", "cheaper", "expensive",
@@ -64,7 +67,10 @@ OUT_OF_SCOPE = _rx("رخصة", "سواقة", "سياقة", "قيادة", "مرك
                    "شهادة جامعية", "الشهادة الجامعية", "تصديق", "فيزا", "تأشيرة", "عدم محكومية", "تذكرة", "طيران",
                    "جواز دبلوماسي", "جواز خاص", "جواز مؤقت", "جواز سفر مؤقت", "جواز السفر المؤقت", "وثيقة سفر",
                    "تجنيس", "ضريبة", "تصريح عمل", "licen", "visa")
-CLAUSE_SPLIT = re.compile(r"[،,.؟?!؛;:\n]|\s(?:وكمان|كمان|وكذلك|وايضا|بالاضافه|اما|and also)\s")
+CLAUSE_SPLIT = re.compile(r"[،,.؟?!؛;:\n]|\s(?:وكمان|كمان|وكذلك|وأيضا|وايضا|وأيضاً|بالإضافة|بالاضافة|أما|اما|and also)\s")
+# "أول / تاني / ثالث مرة": a loss count when the chat is about a lost document
+COUNT_WORDS = _rx(r"(المرة|مرة|للمرة) (الأولى|الاولى|الثانية|ثانية|التانية|تانية|الثالثة|ثالثة|التالتة|تالتة)",
+                  r"(أول|اول|ثاني|تاني|ثالث|تالت) مرة", "first time", "second time", "third time")
 
 SIT_ASK = "إصدار {doc} لأول مرة أم تجديده أم بدل فاقد أم بدل تالف"
 
@@ -73,16 +79,21 @@ def doc_of(service_id: str) -> str:
     return next(d for d in DOCS if service_id.startswith(d + "_"))
 
 
+def sit_of(service_id: str) -> str:
+    return service_id[len(doc_of(service_id)) + 1:]
+
+
 @dataclass
 class Route:
     services: list[str] = field(default_factory=list)
     in_scope: bool = True
     needs_clarification: bool = False
     standalone: str = ""
-    source: str = "lexicon"            # lexicon | llm | lexicon-fallback
+    source: str = "lexicon"            # lexicon | state | llm
     docs: list[str] = field(default_factory=list)          # documents named in the message (lexicon)
     sits: list[str] = field(default_factory=list)          # situations named in the message (lexicon)
     unsure: str = ""                   # why the lexicon was unsure ("" = sure)
+    clauses: dict[str, list[str]] = field(default_factory=dict)   # service -> the clauses (display text) it came from
 
 
 def _mentions(rx_map: dict, text: str) -> list[tuple[int, str]]:
@@ -113,14 +124,17 @@ def _clause(text: str) -> tuple[dict[str, list[str]], list[str], bool]:
 
 
 def lexicon(message: str) -> Route:
-    """Rule-based route. route.unsure != "" -> ask the LLM router."""
+    """Rule-based route. route.unsure != "" -> the lexicon alone is not enough."""
     text = normalize_search(message)
     r = Route(standalone=message)
-    if OUT_OF_SCOPE.search(text):
+    known = text
+    for rx in EXTRA_DOC_WORDS.values():       # an added document ("شهادة الميلاد") is no longer out of scope
+        known = rx.sub(" ", known)
+    if OUT_OF_SCOPE.search(known):
         r.unsure = "out_of_scope_word"
     pairs, open_docs, pending, last_sits, last_doc, conflict = [], [], [], [], None, False
-    for clause in filter(str.strip, CLAUSE_SPLIT.split(text)):
-        by_doc, sits, clash = _clause(clause)
+    for clause in filter(str.strip, CLAUSE_SPLIT.split(normalize_display(message))):
+        by_doc, sits, clash = _clause(normalize_search(clause))
         r.docs += [d for d in by_doc if d not in r.docs]
         r.sits += [s for s in sits if s not in r.sits]
         conflict |= clash
@@ -129,21 +143,29 @@ def lexicon(message: str) -> Route:
         if by_doc:
             for d, ds in by_doc.items():
                 if ds:
-                    pairs += [(d, s) for s in ds]
+                    pairs += [(d, s, [clause]) for s in ds]
                 else:                         # "جوازي ضاع، والهوية كمان" -> the clause's / previous situations
-                    open_docs.append((d, sits or pending or last_sits))
-            pending, last_doc = [], list(by_doc)[-1]
+                    open_docs.append((d, sits or [p for p, _ in pending] or last_sits,
+                                      [clause] + [c for _, c in pending]))
+            pending, last_doc = [], (list(by_doc)[-1], clause)
         elif sits:
             if last_doc:                      # "جوازي باقي عليه 3 شهور، كم رسوم التجديد؟" -> the last document
-                pairs += [(last_doc, s) for s in sits]
+                pairs += [(last_doc[0], s, [last_doc[1], clause]) for s in sits]
             else:
-                pending = sits                # the document comes in a later clause
+                pending = [(s, clause) for s in sits]   # the document comes in a later clause
         last_sits = sits or last_sits
-    for d, sits in open_docs:
+    for d, sits, clauses in open_docs:
         if any(p[0] == d for p in pairs):
             continue                          # the document got its situation elsewhere in the message
-        pairs += [(d, s) for s in (sits or SITUATIONS)]   # only the document named -> all four situations
-    r.services = list(dict.fromkeys(f"{d}_{s}" for d, s in pairs))
+        pairs += [(d, s, clauses) for s in (sits or SITUATIONS)]   # only the document named -> all four
+    for d, s, clauses in pairs:
+        sid = f"{d}_{s}"
+        if sid not in SERVICE_IDS:            # an added document may not have all four situations
+            continue
+        if sid not in r.services:
+            r.services.append(sid)
+        r.clauses.setdefault(sid, [])
+        r.clauses[sid] += [c for c in clauses if c not in r.clauses[sid]]
     if not r.docs:
         r.unsure = r.unsure or "no_document"
     elif conflict and not COMPARE.search(text) and len(r.docs) == 1:
@@ -163,6 +185,10 @@ id_card_first_issue, id_card_renewal, id_card_lost, id_card_damaged.
 - إذا كان السؤال عن خدمة غير هذه الخدمات فاجعل in_scope=false.
 - إذا لم يحدد المستخدم الوثيقة ولا يمكن معرفتها من سياق المحادثة فاجعل needs_clarification=true.
 - اكتب standalone_question: سؤال كامل واضح بالفصحى يتضمن الوثيقة والحالة من سياق المحادثة."""
+_ADDED = [sid for sid in SERVICE_IDS if sid not in BUILTIN_SERVICES]
+if _ADDED:                                    # services added with `python -m Agent.add_document`
+    ROUTER_SYSTEM += ("\n- خدمات أخرى متاحة أيضاً: " + "، ".join(f"{NAMES[s]} ({s})" for s in _ADDED)
+                      + ". هذه الخدمات ضمن النطاق.")
 
 ROUTER_SCHEMA = {
     "type": "object",
@@ -195,43 +221,44 @@ def llm_route(message: str, history: list[tuple[str, str]], model: str | None = 
     return data
 
 
-def route(message: str, history: list[tuple[str, str]] | None = None, prev_services: list[str] | None = None,
-          model: str | None = None) -> Route:
-    """Lexicon first; the LLM router when the lexicon is unsure or the message continues a conversation."""
+def route(message: str, history: list[tuple[str, str]] | None = None,
+          state: tuple[list[str], list[str]] | None = None, model: str | None = None) -> Route:
+    """Lexicon first. In a conversation, `state` = (documents, situations) of the chat so far: the message only
+    replaces the slots it names ("وللهوية؟" keeps the situation, "وإذا تالف؟" keeps the document, "تاني مرة" after a
+    loss keeps "lost"). The LLM router only decides in / out of scope when no document is known or a word from an
+    uncovered service appears; a missing document is always asked back, never guessed."""
     history = history or []
+    st_docs, st_sits = state or ([], [])
     r = lexicon(message)
-    if history and not r.docs:
-        r.unsure = r.unsure or "follow_up"
+    text = normalize_search(message)
+    if history and (st_docs or st_sits) and r.unsure != "out_of_scope_word":
+        sits = r.sits
+        if "lost" in st_sits and COUNT_WORDS.search(text) and set(sits) <= {"first_issue"}:
+            sits = []                         # "وإذا أول مرة؟" after a lost passport = the first loss
+        docs = r.docs or st_docs
+        sits = sits or st_sits
+        if docs and sits and (not r.docs or not r.sits or sits != r.sits):
+            r.services = [f"{d}_{s}" for d in docs for s in sits if f"{d}_{s}" in SERVICE_IDS]
+            r.source, r.unsure = "state", ""
+            r.docs, r.sits = docs, sits
+            r.in_scope = bool(r.services)     # e.g. renewal of an added document that has no renewal page
+            return r
+        if docs and not sits:                 # a document but still no situation: all four, as without a chat
+            r.unsure = ""
     if not r.unsure:
+        if r.docs and not r.services:         # a known document, but no page for that situation
+            r.in_scope = False
         return r
-    # what the lexicon would do on its own (used when the LLM's answer is unusable)
-    fallback = list(r.services)
-    if not fallback and prev_services and history:
-        prev_docs = list(dict.fromkeys(doc_of(s) for s in prev_services))
-        fallback = [f"{d}_{s}" for d in prev_docs for s in r.sits] if r.sits else list(prev_services)
     data = llm_route(message, history, model)
     log.info("llm router (%s): %s", r.unsure, data)
-    if not data:
-        r.source, r.services = "lexicon-fallback", fallback
-        r.needs_clarification = not fallback and r.unsure != "out_of_scope_word"
-        r.in_scope = bool(fallback) or r.needs_clarification
-        return r
     r.source = "llm"
-    r.standalone = (data.get("standalone_question") or "").strip() or message
-    r.in_scope = bool(data.get("in_scope", True))
-    r.needs_clarification = bool(data.get("needs_clarification")) and r.in_scope
-    r.services = data["services"] if r.in_scope and not r.needs_clarification else []
-    if r.in_scope and not r.needs_clarification and not r.services:
-        if fallback:
-            r.services, r.source = fallback, "lexicon-fallback"
-        else:
-            r.needs_clarification = True
-    if r.needs_clarification and fallback and history:      # a follow-up we can resolve from the conversation
-        r.services, r.needs_clarification, r.source = fallback, False, "lexicon-fallback"
-    if not history and not r.docs and len({doc_of(s) for s in r.services}) > 1:
-        r.services, r.needs_clarification = [], True       # "بدي أجدد" -> the LLM guessed every document: ask
-    if not r.in_scope and r.docs and r.sits and r.unsure != "out_of_scope_word":
-        r.in_scope, r.services, r.source = True, fallback, "lexicon-fallback"   # the lexicon clearly saw a service
+    r.in_scope = bool(data.get("in_scope", True)) if data else r.unsure != "out_of_scope_word"
+    if not r.in_scope:
+        r.services = []
+    elif not r.docs:                          # no document type detected -> ask (never guess one)
+        r.services, r.needs_clarification = [], True
+    else:                                     # an uncovered-service word next to a known document, still in scope
+        r.source = "lexicon"
     return r
 
 
@@ -240,6 +267,5 @@ def clarification(r: Route) -> str:
     if len(r.docs) == 1 and not r.sits:
         return f"هل تقصد {SIT_ASK.format(doc=DOCS[r.docs[0]])}؟"
     if r.sits and not r.docs:
-        return "هل تقصد جواز السفر أم دفتر العائلة أم البطاقة الذكية؟"
-    return ("هل تقصد جواز السفر أم دفتر العائلة أم البطاقة الذكية؟ "
-            "وهل هي إصدار أول مرة أم تجديد أم بدل فاقد أم بدل تالف؟")
+        return f"هل تقصد {docs_or()}؟"
+    return f"هل تقصد {docs_or()}؟ وهل هي إصدار أول مرة أم تجديد أم بدل فاقد أم بدل تالف؟"

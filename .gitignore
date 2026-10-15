@@ -24,3 +24,5 @@ results/
 results_*.log
 chat_log.md
 chat_logs/
+answers_*.json
+run_*.log

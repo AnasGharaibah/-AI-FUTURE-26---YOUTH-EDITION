@@ -7,6 +7,7 @@ the menus, empty/duplicate lines and stray symbols - the facts are kept word for
     load()["passport_damaged"]["fields"]["الرسوم"]      # "100 دينار"
     snippets(["passport_damaged"], ["الرسوم", "ملاحظات"])  # [{"service", "sid", "field", "text"}, ...]
 """
+import json
 import os
 import re
 from functools import lru_cache
@@ -26,7 +27,40 @@ NAMES = {      # service id -> the name used in snippets and contexts (the brief
     "id_card_first_issue": "بطاقة ذكية لأول مرة", "id_card_renewal": "تجديد البطاقة الذكية",
     "id_card_lost": "بطاقة ذكية بدل فاقد", "id_card_damaged": "بطاقة ذكية بدل تالف",
 }
+BUILTIN_DOCS = tuple(DOCS)
+BUILTIN_SERVICES = tuple(NAMES)
+
+# services added with `python -m Agent.add_document` (same 9-field pages): data/services.json
+#   {"docs": {doc_id: {"name": "شهادة الميلاد", "words": ["شهادة الميلاد", "شهادة ميلاد"]}},
+#    "services": {service_id: {"name": "شهادة ميلاد لأول مرة", "doc": doc_id, "situation": "first_issue"}}}
+REGISTRY = Path(os.getenv("YOTH_REGISTRY") or ROOT / "data/services.json")
+
+
+def registry() -> dict:
+    try:
+        data = json.loads(REGISTRY.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        data = {}
+    return {"docs": data.get("docs", {}), "services": data.get("services", {})}
+
+
+_REG = registry()
+DOCS.update({d: v["name"] for d, v in _REG["docs"].items()})
+NAMES.update({sid: v["name"] for sid, v in _REG["services"].items()})
+DOC_EXTRA_WORDS = {d: v.get("words") or [v["name"]] for d, v in _REG["docs"].items()}   # router keywords
 SERVICE_IDS = tuple(NAMES)
+
+
+def docs_and() -> str:
+    """"جواز السفر ودفتر العائلة والبطاقة الذكية" (+ the added documents) - for prompts and fixed replies."""
+    names = list(DOCS.values())
+    return " و".join(names)
+
+
+def docs_or() -> str:
+    """"جواز السفر أم دفتر العائلة أم البطاقة الذكية" (+ the added documents) - for the clarifying question."""
+    return " أم ".join(DOCS.values())
+
 
 # label at the start of a line in the file -> short field name used in snippets (document order)
 LABELS = (("الفئة المستفيدة", "الفئة المستفيدة"), ("أماكن تقديم الخدمة", "أماكن تقديم الخدمة"),
@@ -87,14 +121,20 @@ def split_text(text: str, limit: int = MAX_SNIPPET) -> list[str]:
     return pieces + [cur] if cur else pieces
 
 
+LINE_FIELDS = ("الرسوم", "ملاحظات")      # one snippet per line: each fee rule / note can be selected and cited alone
+
+
 def snippets(service_ids: list[str], fields: list[str] | None = None) -> list[dict]:
-    """One snippet per (service, field) - long fields split - in service order, then document field order."""
+    """One snippet per (service, field) - long fields split, fees and notes one per line - in service order, then
+    document field order. "line" = the line's position in its field (fees / notes)."""
     out, services = [], load()
     for sid in service_ids:
         for field in FIELDS:
             text = services[sid]["fields"].get(field)
             if text and (fields is None or field in fields):
-                out += [{"sid": sid, "service": NAMES[sid], "field": field, "text": p} for p in split_text(text)]
+                parts = text.splitlines() if field in LINE_FIELDS else split_text(text)
+                out += [{"sid": sid, "service": NAMES[sid], "field": field, "text": p, "line": i}
+                        for i, p in enumerate(parts)]
     return out
 
 
