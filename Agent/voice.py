@@ -36,6 +36,9 @@ CONFIG = {
     "whisper_compute_cpu": "int8",
     "beam_size": 5,
     "stt_language": "ar",                                      # "ar" | "en" | None (auto, mixed speech)
+    # Arabic speech: the service words, so Whisper writes "كم رسوم ... جواز السفر" (not "كما ... السفري")
+    "stt_prompt_ar": "أسئلة عن جواز السفر وبطاقة الهوية ودفتر العائلة: كم الرسوم؟ ما الوثائق المطلوبة؟ "
+                     "تجديد، إصدار لأول مرة، بدل فاقد، بدل تالف.",
     "sample_rate": 16000,
     "silence_rms": 0.01,                                       # RMS below this counts as silence
     "silence_seconds": 1.2,                                    # stop after this much silence
@@ -175,10 +178,27 @@ def _load_whisper():
         return WhisperModel(CONFIG["whisper_model"], device="cpu", compute_type=CONFIG["whisper_compute_cpu"])
 
 
+# What Whisper "hears" in silence / breathing: subtitle credits from its training data, mostly Arabic ones.
+_HALLUCINATION = re.compile(
+    r"ترجمة\s+نانسي|نانسي\s+قنقر|اشتركوا?\s+(?:في\s+)?(?:القناة|قناتي)|لا\s+تنسوا?\s+(?:الاشتراك|الإعجاب)|"
+    r"شكرا\s+(?:لكم\s+)?(?:على|علي)\s+المشاهدة|شكرًا\s+(?:لكم\s+)?على\s+المشاهدة|المترجم\s*:|تفريغ\s+نصي|"
+    r"thanks?\s+(?:you\s+)?for\s+watching|please\s+subscribe|subtitles?\s+by|amara\.org", re.I)
+
+
+def _real_speech(seg) -> bool:
+    if seg.no_speech_prob > 0.6 and seg.avg_logprob < -1.0:      # Whisper itself thinks it is silence
+        return False
+    return not _HALLUCINATION.search(seg.text)
+
+
 def _stt(data: np.ndarray, language: str | None) -> dict:
+    prompt = CONFIG["stt_prompt_ar"] if language == "ar" else None
     segments, info = _whisper().transcribe(data, language=language, task="transcribe", beam_size=CONFIG["beam_size"],
-                                           vad_filter=True, condition_on_previous_text=False)
-    return {"text": " ".join(s.text.strip() for s in segments), "language": info.language}
+                                           vad_filter=True, condition_on_previous_text=False, initial_prompt=prompt)
+    kept = [s.text.strip() for s in segments if _real_speech(s)]
+    if prompt:          # in near-silence Whisper can repeat its prompt; a short real question ("كم الرسوم") is kept
+        kept = [t for t in kept if len(t) < 25 or t.strip(" .،؟?") not in prompt]
+    return {"text": " ".join(kept), "language": info.language}
 
 
 FROM_CONFIG = "config"          # default language marker: read CONFIG["stt_language"] when called, not at import

@@ -83,6 +83,22 @@ def route(message: str, model: str | None = None) -> tuple[str, str]:
     return SERVICE, "default"
 
 
+# What people call a service -> what the documents call it. The official name is added next to the everyday one,
+# so search and the model both see the documents' term ("بطاقة الهوية" alone: right document found, but refused).
+_EVERYDAY_NAMES = [
+    (re.compile(r"(?:بطاق[ةه]\s+)?(?:ال)?هوي(?:[ةه]|ت(?:ي|ك|ه|ها|نا|كم))(?:\s+(?:ال)?شخصي[ةه])?"),
+     "بطاقة الأحوال المدنية الذكية", "احوال"),
+    (re.compile(r"\bid card\b|\bnational id\b", re.I), "civil status ID card (بطاقة الأحوال المدنية الذكية)", "احوال"),
+]
+
+
+def with_official_names(question: str) -> str:
+    for pattern, official, present in _EVERYDAY_NAMES:
+        if present not in normalize_search(question):
+            question = pattern.sub(lambda m: f"{m.group(0)} ({official})", question, count=1)
+    return question
+
+
 def _mentions_service(m: str) -> bool:
     for s in S.load().values():
         words = [w for w in normalize_search(s.get("service", "")).split() if len(w) >= 4]
@@ -212,15 +228,16 @@ def run(question: str, thread_id: str = "default", model: str | None = None, use
         res = {"answer": text, "sources": [], "tools": [], "model_calls": calls, "retrieved": [], "flags": []}
     elif _failures.get(model, 0) >= CONFIG["fallback_after_failures"]:
         _failures[model] = 0                          # try tools again next turn
-        res = _rag_fallback(raw, thread_id, model, hist, scope, "fallback_rag:previous_failures")
+        res = _rag_fallback(with_official_names(raw), thread_id, model, hist, scope, "fallback_rag:previous_failures")
     else:
+        asked = with_official_names(raw)
         try:
-            res = yield from _tool_loop(raw, model, hist, scope)
+            res = yield from _tool_loop(asked, model, hist, scope)
             _failures[model] = 0
         except ToolCallingFailed as e:
             _failures[model] = _failures.get(model, 0) + 1
             log.warning("tool calling failed (%s) - answering with the RAG path", e)
-            res = _rag_fallback(raw, thread_id, model, hist, scope, f"fallback_rag:{e}")
+            res = _rag_fallback(asked, thread_id, model, hist, scope, f"fallback_rag:{e}")
     res.update(route=r, route_by=how, question=raw, timings={"total": round(time.time() - t0, 2)})
     if keep:
         hist.append((raw, res["answer"]))

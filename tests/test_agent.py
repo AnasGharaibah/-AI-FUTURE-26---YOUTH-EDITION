@@ -26,3 +26,13 @@ def test_check_meta_and_ambiguous_rules():
     amb = "5 سنوات: 25 ديناراً [1]، 10 سنوات: 40 ديناراً [1]. هل تقصد جواز 5 سنوات أم 10 سنوات؟"
     assert ev.check(amb, "25&40", "ambiguous")
     assert not ev.check("هل تقصد 5 أم 10 سنوات؟ الرسوم 25 و40", "25&40", "ambiguous")   # question must come after
+
+
+def test_everyday_service_names_get_the_official_name():
+    from Agent.agent import with_official_names as w
+    assert w("ما الوثائق المطلوبة لبدل فاقد بطاقة الهوية؟") == \
+        "ما الوثائق المطلوبة لبدل فاقد بطاقة الهوية (بطاقة الأحوال المدنية الذكية)؟"
+    assert "(بطاقة الأحوال المدنية الذكية)" in w("ضاعت هويتي شو أعمل")
+    assert "(بطاقة الأحوال المدنية الذكية)" in w("كم رسوم الهويه الشخصيه اول مرة")
+    assert w("كم رسوم بطاقة الأحوال المدنية بدل تالف؟") == "كم رسوم بطاقة الأحوال المدنية بدل تالف؟"   # already official
+    assert w("كم رسوم تجديد جواز السفر؟") == "كم رسوم تجديد جواز السفر؟"

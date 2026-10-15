@@ -28,7 +28,7 @@ DEFAULTS = {
     "chunk_algorithm": "structure",          # or "fixed"
     "top_k_retrieve": 20,                    # candidates from hybrid search
     "top_k_final": 5,                        # chunks given to the LLM
-    "use_reranker": "auto",                  # "auto" = on when an NVIDIA GPU has >= 8 GB (CUDA, fp16, ~1.1 GB)
+    "use_reranker": "auto",                  # "auto" = on when an NVIDIA GPU has >= 8 GB and reranker_device is not "cpu"
     "reranker_min_vram_gb": 8.0,
     "rerank_mode": "fuse",                   # "fuse" = RRF of search order + reranker order; "replace" = reranker only
     # "cpu": the VRAM budget of a voice turn (< 7.6 GB on 8 GB: qwen2.5:7b + Whisper + OmniVoice) has no room for
@@ -116,12 +116,15 @@ class Pipeline:
 
     # ================================================================ search
     def reranker_enabled(self) -> bool:
-        """use_reranker True/False, or "auto": on when torch sees an NVIDIA GPU with >= reranker_min_vram_gb."""
+        """use_reranker True/False, or "auto": on when torch sees an NVIDIA GPU with >= reranker_min_vram_gb
+        and the reranker runs on it - on the CPU it costs 25-50 s per search (20 pairs x 512 tokens), too slow
+        for a chat or voice turn, so "auto" skips it there."""
         setting = self.cfg["use_reranker"]
         if setting != "auto":
             return bool(setting)
         if self._auto_rerank is None:
-            self._auto_rerank = gpu_vram_gb() >= self.cfg["reranker_min_vram_gb"]
+            self._auto_rerank = (self.cfg["reranker_device"] != "cpu"
+                                 and gpu_vram_gb() >= self.cfg["reranker_min_vram_gb"])
         return self._auto_rerank
 
     def _rerank(self, query, hits):

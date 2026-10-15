@@ -597,6 +597,8 @@ Object.assign(AR,{
 let uiLang=localStorage.getItem('lumen-ui-lang')==='ar'?'ar':'en';
 function tr(text){return uiLang==='ar'?(AR[text]||text):text}
 function local(en,ar){return uiLang==='ar'?ar:en}
+/* voice chat labels follow the voice language (Arabic voice chat in the English UI still says أستمع…) */
+function vtr(text){return (typeof voiceLang==="string"&&voiceLang.startsWith("ar"))?(AR[text]||text):tr(text)}
 
 const $=s=>document.querySelector(s);
 const el=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null){e.textContent=x}return e};
@@ -819,6 +821,7 @@ async function speakText(text,onDone){
     const url=URL.createObjectURL(await r.blob());
     if(my!==speakToken){URL.revokeObjectURL(url);return}
     player=new Audio(url);
+    voiceMeterFrom(player);
     player.onended=player.onerror=()=>{URL.revokeObjectURL(url);finish()};
     await player.play();
   }catch{finish()}
@@ -1010,7 +1013,7 @@ async function ask(q,opts={}){
     }
   }
   if(opts.voice&&voiceChat){
-    setVoiceStatus(tr("Speaking…"));
+    setVoiceStatus(vtr("Speaking…"),'speaking');
     speakText(text.startsWith('NOTE: ')?'':text,()=>startVoiceListening(650));
   }
   if(bub._chatRecord?.pending){bub._chatRecord.text=bub.textContent;bub._chatRecord.pending=false}
@@ -1123,8 +1126,34 @@ $('#vclose').onclick=()=>{$('#viewer').hidden=true;$('#app').classList.remove('s
    answers (/api/tts). A recording ends after ~1.2 s of silence once speech was heard. */
 const canRecord=!!(navigator.mediaDevices?.getUserMedia&&window.MediaRecorder);
 let rec=null;   // the running recording: rec.stop(send)
+/* The voice orb reads its loudness from voiceMeter.an: the recording's analyser while listening,
+   the answer's audio while speaking. One mic stream only - the orb never opens its own. */
+const voiceMeter={an:null,data:null,ctx:null};
+function voiceAudioContext(){
+  if(!voiceMeter.ctx||voiceMeter.ctx.state==='closed')voiceMeter.ctx=new (window.AudioContext||window.webkitAudioContext)();
+  voiceMeter.ctx.resume?.().catch(()=>{});
+  return voiceMeter.ctx;
+}
+function voiceMeterUse(an){voiceMeter.an=an;voiceMeter.data=an?new Uint8Array(an.fftSize):null}
+function voiceMeterFrom(audio){
+  try{
+    const ctx=voiceAudioContext();
+    if(ctx.state!=='running'){voiceMeterUse(null);return}   // routed through a suspended context = no sound
+    const an=ctx.createAnalyser();an.fftSize=512;an.smoothingTimeConstant=.6;
+    const src=ctx.createMediaElementSource(audio);src.connect(an);an.connect(ctx.destination);
+    voiceMeterUse(an);
+  }catch{voiceMeterUse(null)}   // the audio still plays; the orb falls back to its animation
+}
 
-function setVoiceStatus(text){$('#voiceStatus').textContent=text;const k=Object.keys(AR).find(x=>AR[x]===text)||text;$('#voiceDock').dataset.state=/Listen|أستمع/.test(k)?'listening':/Think/.test(k)?'thinking':/Speak|Start/.test(k)?'speaking':'idle'}
+function setVoiceStatus(text,state){
+  $('#voiceStatus').textContent=text;
+  if(state){
+    $('#voiceDock').dataset.state=state;
+    return;
+  }
+  const k=Object.keys(AR).find(x=>AR[x]===text)||text;
+  $('#voiceDock').dataset.state=/Listen|أستمع/.test(k)?'listening':/Think|تفكير/.test(k)?'thinking':/Speak|Speaking|Start|تحدث|يتحدث|بدء/.test(k)?'speaking':'idle';
+}
 function setVoiceActive(on){
   voiceChat=on;
   $('#voicePanel').hidden=!on;
@@ -1135,45 +1164,66 @@ function setVoiceActive(on){
 /* Record one utterance -> Blob, or null when nothing was said / it was cancelled. */
 async function recordOnce(){
   const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
-  const ctx=new (window.AudioContext||window.webkitAudioContext)();
-  const an=ctx.createAnalyser();an.fftSize=1024;ctx.createMediaStreamSource(stream).connect(an);
+  const ctx=voiceAudioContext();
+  const an=ctx.createAnalyser();an.fftSize=1024;an.smoothingTimeConstant=.5;
+  const source=ctx.createMediaStreamSource(stream);source.connect(an);voiceMeterUse(an);
   const data=new Uint8Array(an.fftSize),parts=[],mr=new MediaRecorder(stream);
   mr.ondataavailable=e=>{if(e.data.size)parts.push(e.data)};
   return new Promise(resolve=>{
-    let heard=false,quietSince=0,cancelled=false,timer=0;const started=performance.now();
-    mr.onstop=()=>{clearInterval(timer);stream.getTracks().forEach(t=>t.stop());ctx.close().catch(()=>{});
+    let heard=false,quietSince=0,cancelled=false,timer=0,loudMs=0;const started=performance.now();
+    mr.onstop=()=>{clearInterval(timer);stream.getTracks().forEach(t=>t.stop());source.disconnect();
+      if(voiceMeter.an===an)voiceMeterUse(null);
       resolve(cancelled||!heard?null:new Blob(parts,{type:mr.mimeType||'audio/webm'}))};
     rec={stop(send=true){cancelled=!send;if(mr.state!=='inactive')mr.stop()}};
     mr.start(250);
     timer=setInterval(()=>{
       an.getByteTimeDomainData(data);let sum=0;for(const v of data){const x=(v-128)/128;sum+=x*x}
       const now=performance.now();
-      if(Math.sqrt(sum/data.length)>0.02){heard=true;quietSince=0}
-      else if(heard){quietSince=quietSince||now;if(now-quietSince>1200)rec.stop(true)}
+      // speech = 250 ms of sound above the threshold (a click or a key press is not); the turn ends after
+      // 1.5 s of quiet, so a pause between Arabic words does not cut the question
+      if(Math.sqrt(sum/data.length)>0.02){loudMs+=100;quietSince=0;if(loudMs>=250)heard=true}
+      else{loudMs=Math.max(0,loudMs-50);if(heard){quietSince=quietSince||now;if(now-quietSince>1500)rec.stop(true)}}
       if(now-started>30000||(!heard&&now-started>12000))rec.stop(true);
     },100);
   });
 }
 async function transcribeBlob(blob){
-  const fd=new FormData();fd.append('audio',blob,'speech.webm');fd.append('language',voiceLang.slice(0,2));
+  const fd=new FormData();
+  fd.append('audio',blob,'speech.webm');
+  // Force transcription rather than translation, preserving the spoken language.
+  const lang=(voiceLang||'').slice(0,2).toLowerCase();
+  if(lang==='ar'||lang==='en')fd.append('language',lang);
+  fd.append('task','transcribe');
   const r=await api('/api/stt',{method:'POST',body:fd});
-  return (r.text||'').trim();
+  return String(r.text||'').normalize('NFKC').trim();
 }
 function startVoiceListening(delay=250){
   clearTimeout(voiceRestart);
   if(!voiceChat||busy||isSpeaking)return;
   voiceRestart=setTimeout(async()=>{
     if(!voiceChat||busy||isSpeaking||rec)return;
-    setVoiceStatus(voiceLang.startsWith('ar')?'أستمع…':tr("Listening…"));
+    setVoiceStatus(vtr("Listening…"),'listening');
     let blob=null;
     try{blob=await recordOnce()}
-    catch{rec=null;setVoiceStatus(tr("Microphone issue"));toast(tr("Dictation could not start. Check microphone permission."));return}
+    catch{
+      rec=null;
+      setVoiceStatus(vtr("Microphone issue"),'idle');
+      toast(tr("Dictation could not start. Check microphone permission."));
+      if(voiceChat)startVoiceListening(900);
+      return;
+    }
     rec=null;
     if(!voiceChat)return;
     if(!blob){startVoiceListening(300);return}
-    setVoiceStatus(tr("Thinking…"));
+    setVoiceStatus(vtr("Thinking…"),'thinking');
     let q='';
-    try{q=await transcribeBlob(blob)}catch(e){toast(e.message)}
+    try{q=await transcribeBlob(blob)}
+    catch(e){
+      toast(e.message);
+      setVoiceStatus(vtr("Ready"),'idle');
+      if(voiceChat)startVoiceListening(700);
+      return;
+    }
     if(!voiceChat)return;
     if(!q){startVoiceListening(300);return}
     ask(q,{voice:true});
@@ -1185,11 +1235,11 @@ function stopVoiceChat(){
   stopSpeaking();
   rec?.stop(false);
   setVoiceActive(false);
-  setVoiceStatus(tr("Ready"));
+  setVoiceStatus(vtr("Ready"),'idle');
 }
 function greet(){
   rec?.stop(false);
-  setVoiceStatus(tr("Starting…"));
+  setVoiceStatus(vtr("Starting…"),'speaking');
   speakText(voiceLang.startsWith('ar')?'مرحباً، كيف يمكنني مساعدتك اليوم؟':'Hey, how can I help you today?',()=>startVoiceListening(400));
 }
 function startVoiceChat(){
@@ -1388,9 +1438,39 @@ $('#exportWordChat').onclick=e=>{
   const items=currentChatItems();
   exportWord(items,items[0]?.question||'',e.currentTarget);
 };
+function exportableChatRows(){
+  const rows=[];
+  for(const chat of savedChats){
+    let pendingQuestion='';
+    for(const record of (chat.messages||[])){
+      if(record.role==='user'){
+        pendingQuestion=record.text||'';
+        continue;
+      }
+      if(record.role!=='assistant'||record.pending)continue;   // an answer still streaming is not exported
+      const meta=record.meta||{};
+      const answer=meta.answer||record.text||'';
+      if(!answer)continue;
+      // context = the evidence the answer was written from: one entry per source [n]
+      const context=(meta.sources||record.sources||[]).map(s=>({
+        n:s.n,file:s.file||'',page:s.page||null,section:s.section||'',text:s.quote||s.text||''
+      }));
+      rows.push({chat_id:chat.id,question:pendingQuestion,answer,context});
+      pendingQuestion='';
+    }
+  }
+  return rows;
+}
 $('#exportChats').onclick=()=>{
-  saveCurrentChat();const blob=new Blob([JSON.stringify({chats:savedChats},null,2)],{type:'application/json'});
-  const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='lumen-chats.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  saveCurrentChat();
+  const payload=exportableChatRows();
+  const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
+  const url=URL.createObjectURL(blob);
+  const link=document.createElement('a');
+  link.href=url;
+  link.download='verity-chat-export.json';
+  link.click();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
 };
 $('#libraryToggle').onclick=()=>{
   const panel=$('#libraryPanel');panel.hidden=!panel.hidden;$('#libraryToggle').setAttribute('aria-expanded',String(!panel.hidden));
@@ -1415,7 +1495,7 @@ let seen=false;try{seen=sessionStorage.getItem('verity-intro')==='1'}catch{}
 if(!seen&&!reduce){
   const i=document.createElement('div');i.id='intro';
   i.innerHTML='<div class="iOrb"></div><div class="iName">Verity</div><div class="iTag"></div>';
-  i.querySelector('.iTag').textContent='Answers you can prove';i.dir='ltr';
+  i.querySelector('.iTag').textContent='Verity — Every answer, verified.';i.dir='ltr';
   const done=()=>i.remove();
   i.addEventListener('animationend',e=>{if(e.animationName==='introOut')done()});
   i.onclick=done;
@@ -1649,25 +1729,19 @@ const dock=document.getElementById('voiceDock'),vpanel=document.getElementById('
 if(dock&&vpanel){
   const meter=mk('div','vMeter');for(let i=0;i<7;i++)meter.append(mk('span'));meter.setAttribute('aria-hidden','true');
   document.getElementById('voiceStatus')?.before(meter);
-  let mic=null,lvl=0,raf=0;
-  async function micOn(){
-    if(!VOICE_METER||mic||!navigator.mediaDevices?.getUserMedia)return;
-    try{
-      const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
-      const ctx=new (window.AudioContext||window.webkitAudioContext)();
-      const an=ctx.createAnalyser();an.fftSize=512;an.smoothingTimeConstant=.6;
-      ctx.createMediaStreamSource(stream).connect(an);
-      mic={stream,ctx,an,data:new Uint8Array(an.fftSize)};
-      if(vpanel.hidden)micOff();
-    }catch(e){mic=null}
+  let lvl=0,raf=0;
+  function loudness(){   // 0..1 from the live analyser (your mic while listening, the answer while speaking)
+    const {an,data}=voiceMeter;if(!VOICE_METER||!an)return null;
+    an.getByteTimeDomainData(data);let sum=0;for(const v of data){const x=(v-128)/128;sum+=x*x}
+    return Math.min(1,Math.sqrt(sum/data.length)*5.5);
   }
-  function micOff(){if(!mic)return;try{mic.stream.getTracks().forEach(t=>t.stop());mic.ctx.close()}catch{}mic=null}
   function loop(now){
     const st=dock.dataset.state||'idle';let target=0;
-    if(st==='listening'&&mic){
-      mic.an.getByteTimeDomainData(mic.data);let sum=0;for(const v of mic.data){const x=(v-128)/128;sum+=x*x}
-      target=Math.min(1,Math.sqrt(sum/mic.data.length)*5.5);
-    }else if(st==='speaking'){const t=now/1000;target=Math.max(0,.28+.32*Math.sin(t*11)*Math.sin(t*3.1)+.12*Math.sin(t*23))}
+    if(st==='listening'){target=loudness()??0}
+    else if(st==='speaking'){
+      const real=loudness(),t=now/1000;
+      target=real??Math.max(0,.28+.32*Math.sin(t*11)*Math.sin(t*3.1)+.12*Math.sin(t*23));
+    }
     else if(st==='thinking'){target=.12+.08*Math.sin(now/180)}
     lvl+=(target-lvl)*(target>lvl?.45:.15);
     dock.style.setProperty('--lvl',lvl.toFixed(3));
@@ -1675,7 +1749,7 @@ if(dock&&vpanel){
     if(!raf)dock.style.setProperty('--lvl','0');
   }
   new MutationObserver(()=>{
-    if(!vpanel.hidden){micOn();if(!raf&&!reduce)raf=requestAnimationFrame(loop)}else micOff();
+    if(!vpanel.hidden&&!raf&&!reduce)raf=requestAnimationFrame(loop);
   }).observe(vpanel,{attributes:true,attributeFilter:['hidden']});
 }
 

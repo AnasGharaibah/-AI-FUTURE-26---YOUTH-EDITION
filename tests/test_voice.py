@@ -1,3 +1,6 @@
+import numpy as np
+
+from Agent import voice
 from Agent.voice import clean_text, digits_to_words, number_to_arabic_words as w
 
 
@@ -29,3 +32,14 @@ def test_clean_text_arabic_speakable():
     out = clean_text("الرسوم 25 دينارا [1][2]. **ملاحظة** يرجى المراجعة. ثالثا. رابعا.")
     assert "[" not in out and "*" not in out and "25" not in out and "خمسة وعشرون" in out
     assert len([x for x in out.split(".") if x.strip()]) <= 3
+
+
+def test_stt_drops_whisper_silence_hallucinations(monkeypatch):
+    from types import SimpleNamespace as NS
+    seg = lambda text, nsp=0.1, lp=-0.3: NS(text=text, no_speech_prob=nsp, avg_logprob=lp)   # noqa: E731
+    segs = [seg(" كم رسوم تجديد جواز السفر؟"), seg(" ترجمة نانسي قنقر"), seg(" اشتركوا في القناة"),
+            seg(" شيء ما", nsp=0.9, lp=-1.5), seg(voice.CONFIG["stt_prompt_ar"][:40]), seg(" كم الرسوم؟")]
+    fake = NS(transcribe=lambda *a, **k: (iter(segs), NS(language="ar")))
+    monkeypatch.setattr(voice, "_whisper", lambda: fake)
+    out = voice._stt(np.zeros(16000, np.float32), "ar")["text"]
+    assert out == "كم رسوم تجديد جواز السفر؟ كم الرسوم؟"
