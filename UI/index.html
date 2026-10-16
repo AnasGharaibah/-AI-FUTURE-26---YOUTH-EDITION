@@ -802,7 +802,27 @@ let speakToken=0,player=null;
 function stopSpeaking(){
   speakToken++;
   if(player){try{player.pause()}catch{}player=null}
+  try{window.speechSynthesis?.cancel()}catch{}
   isSpeaking=false;
+}
+/* Fallback voice: the browser's own speech (Microsoft Edge has natural Arabic voices). */
+function browserSpeak(text,my,finish){
+  const synth=window.speechSynthesis,ar=/[\u0600-\u06FF]/.test(text);
+  if(!synth){finish();return}
+  const clean=String(text).replace(/\[\d+\]/g,'').replace(/[*#`_]/g,'').slice(0,800);
+  const pick=()=>{const want=ar?'ar':'en';const ok=synth.getVoices().filter(v=>(v.lang||'').toLowerCase().startsWith(want));
+    return ok.find(v=>/natural|online/i.test(v.name))||ok[0]||null};
+  const go=()=>{
+    if(my!==speakToken)return;
+    const v=pick();
+    if(ar&&!v){if(!speakText.warned){speakText.warned=true;toast(local('No Arabic voice found. Open the app in Microsoft Edge, or add an Arabic voice in Windows (Settings › Time & language › Speech).','لا يوجد صوت عربي. افتح التطبيق في متصفح Edge أو أضف صوتاً عربياً في ويندوز (الإعدادات › الوقت واللغة › الكلام).'))}finish();return}
+    const u=new SpeechSynthesisUtterance(clean);
+    if(v){u.voice=v;u.lang=v.lang}else u.lang=ar?'ar-SA':'en-US';
+    u.onend=u.onerror=()=>finish();
+    synth.cancel();synth.speak(u);
+  };
+  if(synth.getVoices().length)go();
+  else{let done=false;const once=()=>{if(!done){done=true;go()}};synth.onvoiceschanged=once;setTimeout(once,800)}
 }
 async function speakText(text,onDone){
   stopSpeaking();
@@ -813,11 +833,7 @@ async function speakText(text,onDone){
   try{
     const r=await fetch('/api/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})});
     if(my!==speakToken)return;
-    if(r.headers.get('X-TTS-Engine')==='no-arabic-voice'&&!speakText.warned){
-      speakText.warned=true;
-      toast(local('Arabic answers are not read aloud: no Arabic voice is installed on the server (Windows: Settings › Time & language › Speech).','لا تُقرأ الإجابات العربية بصوت: لا يوجد صوت عربي مثبت على الخادم (ويندوز: الإعدادات › الوقت واللغة › الكلام).'));
-    }
-    if(!r.ok||r.status===204){finish();return}
+    if(!r.ok||r.status===204){browserSpeak(text,my,finish);return}   // no server voice (e.g. Arabic): the browser speaks
     const url=URL.createObjectURL(await r.blob());
     if(my!==speakToken){URL.revokeObjectURL(url);return}
     player=new Audio(url);
@@ -1240,7 +1256,7 @@ function stopVoiceChat(){
 function greet(){
   rec?.stop(false);
   setVoiceStatus(vtr("Starting…"),'speaking');
-  speakText(voiceLang.startsWith('ar')?'مرحباً، كيف يمكنني مساعدتك اليوم؟':'Hey, how can I help you today?',()=>startVoiceListening(400));
+  speakText(voiceLang.startsWith('ar')?'مرحباً، كيف أستطيع مساعدتك؟':'Hey, how can I help you today?',()=>startVoiceListening(400));
 }
 function startVoiceChat(){
   if(!canRecord){toast(tr("Voice chat is not supported by this browser. Try Chrome or Edge."));return}
@@ -1650,6 +1666,17 @@ if(paper)new MutationObserver(()=>{
   const from=beamFrom;beamFrom=null;
   setTimeout(()=>fireBeam(from,m),reduce?0:720);
 }).observe(paper,{childList:true});
+/* sparkle sound when the beam lands on the evidence */
+let beamAC=null;
+function beamSound(){try{
+  beamAC=beamAC||new (window.AudioContext||window.webkitAudioContext)();beamAC.resume();
+  const ac=beamAC,t=ac.currentTime+.01,out=ac.createGain();out.gain.value=.45;out.connect(ac.destination);
+  [[1567.98,0,.18],[2093,.06,.14],[2637,.12,.10]].forEach(([f,d,v])=>{const o=ac.createOscillator(),g=ac.createGain();o.type='sine';o.frequency.value=f;
+    g.gain.setValueAtTime(0,t+d);g.gain.linearRampToValueAtTime(v,t+d+.008);g.gain.exponentialRampToValueAtTime(.0001,t+d+.9);
+    o.connect(g);g.connect(out);o.start(t+d);o.stop(t+d+1)});
+  const o=ac.createOscillator(),g=ac.createGain();o.type='triangle';o.frequency.setValueAtTime(180,t);o.frequency.exponentialRampToValueAtTime(70,t+.25);
+  g.gain.setValueAtTime(.25,t);g.gain.exponentialRampToValueAtTime(.0001,t+.3);o.connect(g);g.connect(out);o.start(t);o.stop(t+.32);
+}catch{}}
 function fireBeam(from,mark){
   if(!from.isConnected||!mark.isConnected)return;
   const a=from.getBoundingClientRect(),b=mark.getBoundingClientRect();
@@ -1684,7 +1711,7 @@ function fireBeam(from,mark){
     const pt=core.getPointAtLength(len*e);
     [head,head2].forEach(h=>{h.setAttribute('cx',pt.x);h.setAttribute('cy',pt.y)});
     start.setAttribute('r',5+t*18);start.setAttribute('opacity',String(1-t));
-    if(t>=1&&!lit){lit=true;mark.classList.add('ignite')}
+    if(t>=1&&!lit){lit=true;mark.classList.add('ignite');beamSound()}
     if(t>=1){
       const f=Math.min(1,(now-t0-T)/F);
       burst.setAttribute('r',4+f*46);burst.setAttribute('opacity',String((1-f)*.9));
